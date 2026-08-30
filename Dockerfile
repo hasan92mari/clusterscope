@@ -13,6 +13,8 @@ RUN npm run build
 # Production stage
 FROM nginx:alpine
 
+RUN apk add --no-cache gettext
+
 RUN rm /etc/nginx/conf.d/default.conf
 
 COPY nginx.conf /etc/nginx/nginx.conf
@@ -26,13 +28,17 @@ RUN mkdir -p \
     /var/run/nginx \
     && chown -R nginx:nginx \
     /var/cache/nginx \
-    /var/run/nginx \
-    /usr/share/nginx/html
+    /var/run/nginx
 
-COPY --from=build /app/dist /usr/share/nginx/html
+COPY --from=build --chown=nginx:nginx \
+    /app/dist /usr/share/nginx/html
+
+RUN cp /usr/share/nginx/html/config.template.js /tmp/config.template.js \
+    && chown nginx:nginx /tmp/config.template.js \
+    && chown -R nginx:nginx /usr/share/nginx/html
 
 USER nginx
 
 EXPOSE 8080
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["sh", "-c", "envsubst '${POD_NAME} ${POD_NAMESPACE} ${NODE_NAME} ${POD_IP} ${APP_NAME}' < /tmp/config.template.js > /usr/share/nginx/html/config.js && nginx -g 'daemon off;'"]
