@@ -1,4 +1,5 @@
 import './App.css'
+import { clusterConfig } from './config';
 
 function App() {
   return (
@@ -14,28 +15,33 @@ function App() {
 
       <main className="dashboard">
         <div className="card">
-          <span>Cluster</span>
-          <strong>local-cluster</strong>
+          <span>Pod IP</span>
+          <strong>{clusterConfig.podIp}</strong>
         </div>
 
         <div className="card">
           <span>Namespace</span>
-          <strong>clusterscope</strong>
+          <strong>{clusterConfig.namespace}</strong>
         </div>
 
         <div className="card">
           <span>Application</span>
-          <strong>frontend</strong>
+          <strong>{clusterConfig.appName}</strong>
+        </div>
+
+        <div className="card">
+          <span>Pod</span>
+          <strong>{clusterConfig.podName}</strong>
+        </div>
+
+        <div className="card">
+          <span>Node</span>
+          <strong>{clusterConfig.nodeName}</strong>
         </div>
 
         <div className="card">
           <span>Pod Status</span>
           <strong>Running</strong>
-        </div>
-
-        <div className="card">
-          <span>Node</span>
-          <strong>Not connected</strong>
         </div>
 
         <div className="card">
