@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clusterscope-frontend
+  namespace: clusterscope
+spec:
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: clusterscope-frontend
+
+  template:
+    metadata:
+      labels:
+        app: clusterscope-frontend
+
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/hasan92mari/clusterscope-frontend:latest
+          ports:
+            - containerPort: 80
