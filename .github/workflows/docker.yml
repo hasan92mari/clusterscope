@@ -51,17 +51,16 @@ jobs:
             ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ github.sha }}
 
-      - name: Start container
+      - name: Smoke test
         run: |
           docker run -d \
             --name clusterscope \
             -p 8080:8080 \
-            clusterscope-frontend
+            ghcr.io/hasan92mari/clusterscope-frontend:latest
+          sleep 3
+          curl --fail http://localhost:8080/healthz
+          docker stop clusterscope
 
-      - name: Smoke test
-        run: |
-          curl --fail --silent --show-error http://localhost:8080/healthz
-          
       - name: Cleanup container
         if: always()
         run: docker rm -f clusterscope
