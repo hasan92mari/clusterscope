@@ -1,7 +1,10 @@
 name: Docker
 
 on:
+  workflow_dispatch:
   push:
+    branches:
+      - main
     paths:
       - 'src/**'
       - 'public/**'
@@ -47,3 +50,18 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:latest
             ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+      - name: Start container
+        run: |
+          docker run -d \
+            --name clusterscope \
+            -p 8080:8080 \
+            clusterscope-frontend
+
+      - name: Smoke test
+        run: |
+          curl --fail --silent --show-error http://localhost:8080/healthz
+          
+      - name: Cleanup container
+        if: always()
+        run: docker rm -f clusterscope

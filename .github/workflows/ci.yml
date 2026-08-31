@@ -12,6 +12,7 @@ on:
       - 'vite.config.ts'
       - 'tsconfig*.json'
       - 'eslint.config.js'
+      - 'nginx.conf'
 
   pull_request:
     branches:
@@ -24,6 +25,7 @@ on:
       - 'vite.config.ts'
       - 'tsconfig*.json'
       - 'eslint.config.js'
+      - 'nginx.conf'
 
 jobs:
   test:
