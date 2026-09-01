@@ -61,16 +61,26 @@ const serviceAccountTokenPath =
 const serviceAccountCaPath =
   "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt";
 
+/* ============================================================
+   Kubernetes API types
+   ============================================================ */
+
+interface KubernetesContainerStatus {
+  restartCount?: number;
+}
+
+interface KubernetesPodResponse {
+  status?: {
+    startTime?: string;
+    containerStatuses?: KubernetesContainerStatus[];
+  };
+}
+
 /**
  * Get information about the current Kubernetes Pod.
  *
- * This information cannot be provided by the Downward API:
- *
- * - status.startTime
- * - containerStatuses[].restartCount
- *
- * Therefore we query the Kubernetes API using the Pod's
- * ServiceAccount.
+ * The Pod start time and container restart count are obtained
+ * from the Kubernetes API using the Pod's ServiceAccount.
  */
 async function getCurrentPodInfo(): Promise<{
   startTime: string | null;
@@ -124,104 +134,112 @@ async function getCurrentPodInfo(): Promise<{
       `Querying Kubernetes API for pod ${podNamespace}/${podName}`
     );
 
-    const podData = await new Promise<any>((resolve, reject) => {
-      const request = https.request(
-        {
-          hostname: kubernetesApiHost,
-          port: kubernetesApiPort,
-          path: apiPath,
-          method: "GET",
+    const podData = await new Promise<KubernetesPodResponse>(
+      (resolve, reject) => {
+        const request = https.request(
+          {
+            hostname: kubernetesApiHost,
+            port: kubernetesApiPort,
+            path: apiPath,
+            method: "GET",
 
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/json",
+            },
+
+            ca,
+            rejectUnauthorized: true,
           },
 
-          ca,
-          rejectUnauthorized: true,
-        },
+          (response) => {
+            let body = "";
 
-        (response) => {
-          let body = "";
+            response.setEncoding("utf8");
 
-          response.setEncoding("utf8");
+            response.on("data", (chunk: string) => {
+              body += chunk;
+            });
 
-          response.on("data", (chunk) => {
-            body += chunk;
-          });
+            response.on("end", () => {
+              const statusCode = response.statusCode;
 
-          response.on("end", () => {
-            const statusCode = response.statusCode;
+              if (
+                statusCode === undefined ||
+                statusCode < 200 ||
+                statusCode >= 300
+              ) {
+                reject(
+                  new Error(
+                    `Kubernetes API returned HTTP ${statusCode}: ${body}`
+                  )
+                );
 
-            if (
-              statusCode === undefined ||
-              statusCode < 200 ||
-              statusCode >= 300
-            ) {
-              reject(
-                new Error(
-                  `Kubernetes API returned HTTP ${statusCode}: ${body}`
-                )
-              );
+                return;
+              }
 
-              return;
-            }
+              try {
+                const parsedBody: unknown = JSON.parse(body);
 
-            try {
-              resolve(JSON.parse(body));
-            } catch {
-              reject(
-                new Error(
-                  "Kubernetes API returned invalid JSON"
-                )
-              );
-            }
-          });
-        }
-      );
+                if (
+                  typeof parsedBody !== "object" ||
+                  parsedBody === null
+                ) {
+                  reject(
+                    new Error(
+                      "Kubernetes API returned an invalid response"
+                    )
+                  );
 
-      request.setTimeout(5000, () => {
-        request.destroy(
-          new Error("Kubernetes API request timed out")
+                  return;
+                }
+
+                resolve(
+                  parsedBody as KubernetesPodResponse
+                );
+              } catch {
+                reject(
+                  new Error(
+                    "Kubernetes API returned invalid JSON"
+                  )
+                );
+              }
+            });
+          }
         );
-      });
 
-      request.on("error", reject);
+        request.setTimeout(5000, () => {
+          request.destroy(
+            new Error("Kubernetes API request timed out")
+          );
+        });
 
-      request.end();
-    });
+        request.on("error", reject);
 
-    /**
-     * Pod start time.
-     *
-     * Example:
-     * 2026-09-01T13:28:44Z
-     */
+        request.end();
+      }
+    );
+
+    /* ========================================================
+       Pod start time
+       ======================================================== */
+
     const startTime =
-      typeof podData?.status?.startTime === "string"
+      typeof podData.status?.startTime === "string"
         ? podData.status.startTime
         : null;
 
-    /**
-     * Container restart count.
-     */
-    const containerStatuses = Array.isArray(
-      podData?.status?.containerStatuses
-    )
-      ? podData.status.containerStatuses
-      : [];
+    /* ========================================================
+       Container restart count
+       ======================================================== */
 
-    /**
-     * ClusterScope currently has one application container.
-     *
-     * We use the total of restart counts so this continues
-     * to work if another container is added later.
-     */
+    const containerStatuses =
+      Array.isArray(podData.status?.containerStatuses)
+        ? podData.status.containerStatuses
+        : [];
+
     const restartCount = containerStatuses.reduce(
-      (
-        total: number,
-        container: { restartCount?: number }
-      ) => {
+      (total, container) => {
         return total + Number(container.restartCount || 0);
       },
       0
