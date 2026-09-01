@@ -17,6 +17,8 @@ spec:
         app: clusterscope-frontend
 
     spec:
+      serviceAccountName: clusterscope-frontend
+
       containers:
         - name: frontend
           image: ghcr.io/hasan92mari/clusterscope-frontend:latest
@@ -84,16 +86,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
-          
-            - name: POD_START_TIME
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.creationTimestamp
-
-            - name: POD_START_TIME
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.creationTimestamp
 
             - name: APP_NAME
               valueFrom:

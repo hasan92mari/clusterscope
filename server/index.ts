@@ -13,20 +13,10 @@ app.use(express.json());
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/**
- * Redis connection.
- *
- * REDIS_URL can point to:
- *
- *   redis://localhost:6379
- *   redis://:password@localhost:6379
- *   redis://redis-service:6379
- *   redis://:password@redis-service:6379
- *
- * For TLS:
- *
- *   rediss://:password@example.com:6380
- */
+/* ============================================================
+   Redis
+   ============================================================ */
+
 const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 
 const redis = createClient({
@@ -52,11 +42,10 @@ async function connectRedis() {
   }
 }
 
-/**
- * Kubernetes configuration.
- *
- * These values are injected through the Downward API.
- */
+/* ============================================================
+   Kubernetes configuration
+   ============================================================ */
+
 const podName = process.env.POD_NAME;
 const podNamespace = process.env.POD_NAMESPACE;
 
@@ -73,32 +62,44 @@ const serviceAccountCaPath =
   "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt";
 
 /**
- * Query the Kubernetes API for the current Pod.
+ * Get information about the current Kubernetes Pod.
  *
- * We use the Pod name from the Downward API and request only that Pod.
+ * This information cannot be provided by the Downward API:
  *
- * Required RBAC:
+ * - status.startTime
+ * - containerStatuses[].restartCount
  *
- *   apiGroups: [""]
- *   resources: ["pods"]
- *   verbs: ["get"]
+ * Therefore we query the Kubernetes API using the Pod's
+ * ServiceAccount.
  */
 async function getCurrentPodInfo(): Promise<{
   startTime: string | null;
   restartCount: number;
 }> {
   /**
-   * When running locally, the Kubernetes ServiceAccount files
-   * will not exist.
+   * Local development.
+   *
+   * These values do not exist when running outside Kubernetes.
    */
   if (!podName || !podNamespace) {
+    console.log(
+      "Kubernetes pod information unavailable: POD_NAME or POD_NAMESPACE is not set."
+    );
+
     return {
       startTime: null,
       restartCount: 0,
     };
   }
 
+  /**
+   * Kubernetes ServiceAccount token is required.
+   */
   if (!fs.existsSync(serviceAccountTokenPath)) {
+    console.log(
+      "Kubernetes ServiceAccount token not found. Running outside Kubernetes?"
+    );
+
     return {
       startTime: null,
       restartCount: 0,
@@ -114,9 +115,14 @@ async function getCurrentPodInfo(): Promise<{
       ? fs.readFileSync(serviceAccountCaPath)
       : undefined;
 
-    const apiPath = `/api/v1/namespaces/${encodeURIComponent(
-      podNamespace
-    )}/pods/${encodeURIComponent(podName)}`;
+    const apiPath =
+      `/api/v1/namespaces/${encodeURIComponent(
+        podNamespace
+      )}/pods/${encodeURIComponent(podName)}`;
+
+    console.log(
+      `Querying Kubernetes API for pod ${podNamespace}/${podName}`
+    );
 
     const podData = await new Promise<any>((resolve, reject) => {
       const request = https.request(
@@ -132,9 +138,9 @@ async function getCurrentPodInfo(): Promise<{
           },
 
           ca,
-
           rejectUnauthorized: true,
         },
+
         (response) => {
           let body = "";
 
@@ -145,14 +151,16 @@ async function getCurrentPodInfo(): Promise<{
           });
 
           response.on("end", () => {
+            const statusCode = response.statusCode;
+
             if (
-              response.statusCode === undefined ||
-              response.statusCode < 200 ||
-              response.statusCode >= 300
+              statusCode === undefined ||
+              statusCode < 200 ||
+              statusCode >= 300
             ) {
               reject(
                 new Error(
-                  `Kubernetes API returned HTTP ${response.statusCode}: ${body}`
+                  `Kubernetes API returned HTTP ${statusCode}: ${body}`
                 )
               );
 
@@ -163,23 +171,40 @@ async function getCurrentPodInfo(): Promise<{
               resolve(JSON.parse(body));
             } catch {
               reject(
-                new Error("Failed to parse Kubernetes API response")
+                new Error(
+                  "Kubernetes API returned invalid JSON"
+                )
               );
             }
           });
         }
       );
 
+      request.setTimeout(5000, () => {
+        request.destroy(
+          new Error("Kubernetes API request timed out")
+        );
+      });
+
       request.on("error", reject);
 
       request.end();
     });
 
+    /**
+     * Pod start time.
+     *
+     * Example:
+     * 2026-09-01T13:28:44Z
+     */
     const startTime =
       typeof podData?.status?.startTime === "string"
         ? podData.status.startTime
         : null;
 
+    /**
+     * Container restart count.
+     */
     const containerStatuses = Array.isArray(
       podData?.status?.containerStatuses
     )
@@ -187,16 +212,23 @@ async function getCurrentPodInfo(): Promise<{
       : [];
 
     /**
-     * We have only one application container.
+     * ClusterScope currently has one application container.
      *
-     * If there are multiple containers in the future,
-     * sum their restart counts.
+     * We use the total of restart counts so this continues
+     * to work if another container is added later.
      */
     const restartCount = containerStatuses.reduce(
-      (total: number, container: { restartCount?: number }) => {
+      (
+        total: number,
+        container: { restartCount?: number }
+      ) => {
         return total + Number(container.restartCount || 0);
       },
       0
+    );
+
+    console.log(
+      `Kubernetes pod info: startTime=${startTime}, restartCount=${restartCount}`
     );
 
     return {
@@ -204,7 +236,10 @@ async function getCurrentPodInfo(): Promise<{
       restartCount,
     };
   } catch (error) {
-    console.error("Failed to query Kubernetes API:", error);
+    console.error(
+      "Failed to query Kubernetes API:",
+      error
+    );
 
     return {
       startTime: null,
@@ -213,10 +248,14 @@ async function getCurrentPodInfo(): Promise<{
   }
 }
 
+/* ============================================================
+   Health
+   ============================================================ */
+
 /**
  * Liveness check.
  *
- * This intentionally does not depend on Redis or Kubernetes API.
+ * Does NOT depend on Redis or Kubernetes API.
  */
 app.get("/healthz", (_req, res) => {
   res.status(200).json({
@@ -252,9 +291,10 @@ app.get("/readyz", async (_req, res) => {
   }
 });
 
-/**
- * Check Redis connectivity.
- */
+/* ============================================================
+   Redis API
+   ============================================================ */
+
 app.get("/api/session/status", async (_req, res) => {
   try {
     if (!redis.isReady) {
@@ -275,9 +315,6 @@ app.get("/api/session/status", async (_req, res) => {
   }
 });
 
-/**
- * Get session data for a name.
- */
 app.get("/api/session/:name", async (req, res) => {
   try {
     if (!redis.isReady) {
@@ -290,7 +327,10 @@ app.get("/api/session/:name", async (req, res) => {
     const name = req.params.name;
     const key = `session:${name}`;
 
-    const magicNumber = await redis.hGet(key, "magicNumber");
+    const magicNumber = await redis.hGet(
+      key,
+      "magicNumber"
+    );
 
     if (magicNumber === null) {
       return res.json({
@@ -306,7 +346,10 @@ app.get("/api/session/:name", async (req, res) => {
       magicNumber,
     });
   } catch (error) {
-    console.error("Session lookup error:", error);
+    console.error(
+      "Session lookup error:",
+      error
+    );
 
     res.status(500).json({
       connected: false,
@@ -315,12 +358,6 @@ app.get("/api/session/:name", async (req, res) => {
   }
 });
 
-/**
- * Save or update session data for a name.
- *
- * HSET creates the field if it doesn't exist
- * and updates it if it already exists.
- */
 app.post("/api/session/:name", async (req, res) => {
   try {
     if (!redis.isReady) {
@@ -357,7 +394,10 @@ app.post("/api/session/:name", async (req, res) => {
       magicNumber: String(magicNumber),
     });
   } catch (error) {
-    console.error("Session save error:", error);
+    console.error(
+      "Session save error:",
+      error
+    );
 
     res.status(500).json({
       connected: false,
@@ -366,52 +406,72 @@ app.post("/api/session/:name", async (req, res) => {
   }
 });
 
-/**
- * Serve the React application.
- */
-const distPath = path.resolve(__dirname, "../../dist");
+/* ============================================================
+   Static frontend
+   ============================================================ */
+
+const distPath = path.resolve(
+  __dirname,
+  "../../dist"
+);
 
 console.log("dirname:", __dirname);
 console.log("distPath:", distPath);
 
-/**
- * Kubernetes configuration endpoint.
- *
- * Most values come directly from environment variables
- * populated through the Downward API.
- *
- * Pod start time and restart count come from the Kubernetes API.
- */
+/* ============================================================
+   Kubernetes configuration API
+   ============================================================ */
+
 app.get("/api/config", async (_req, res) => {
   const podInfo = await getCurrentPodInfo();
 
   res.json({
     podIp: process.env.POD_IP || "unknown",
-    namespace: process.env.POD_NAMESPACE || "unknown",
-    appName: process.env.APP_NAME || "unknown",
-    podName: process.env.POD_NAME || "unknown",
-    nodeName: process.env.NODE_NAME || "unknown",
+
+    namespace:
+      process.env.POD_NAMESPACE || "unknown",
+
+    appName:
+      process.env.APP_NAME || "unknown",
+
+    podName:
+      process.env.POD_NAME || "unknown",
+
+    nodeName:
+      process.env.NODE_NAME || "unknown",
 
     podStartTime: podInfo.startTime,
+
     restartCount: podInfo.restartCount,
   });
 });
 
+/* ============================================================
+   React application
+   ============================================================ */
+
 app.use(express.static(distPath));
 
-/**
- * React SPA fallback.
- */
 app.get("/", (_req, res) => {
-  res.sendFile(path.join(distPath, "index.html"));
+  res.sendFile(
+    path.join(distPath, "index.html")
+  );
 });
 
 app.get("/{*splat}", (_req, res) => {
-  res.sendFile(path.join(distPath, "index.html"));
+  res.sendFile(
+    path.join(distPath, "index.html")
+  );
 });
 
+/* ============================================================
+   Start server
+   ============================================================ */
+
 app.listen(port, () => {
-  console.log(`ClusterScope API listening on port ${port}`);
+  console.log(
+    `ClusterScope API listening on port ${port}`
+  );
 
   connectRedis();
 });

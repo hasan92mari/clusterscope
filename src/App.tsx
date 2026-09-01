@@ -11,38 +11,6 @@ interface ClusterConfig {
   restartCount: number;
 }
 
-/**
- * Calculate the number of seconds the Pod has already been running.
- */
-function getInitialUptime(startTime: string | null): number {
-  if (!startTime) {
-    return 0;
-  }
-
-  const start = new Date(startTime).getTime();
-
-  if (Number.isNaN(start)) {
-    return 0;
-  }
-
-  return Math.max(0, Math.floor((Date.now() - start) / 1000));
-}
-
-/**
- * Convert seconds to HH:MM:SS.
- */
-function formatUptime(totalSeconds: number): string {
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  return [
-    String(hours).padStart(2, '0'),
-    String(minutes).padStart(2, '0'),
-    String(seconds).padStart(2, '0'),
-  ].join(':');
-}
-
 function App() {
   const [clusterConfig, setClusterConfig] = useState<ClusterConfig>({
     podIp: 'Loading...',
@@ -54,7 +22,7 @@ function App() {
     restartCount: 0,
   });
 
-  const [uptimeSeconds, setUptimeSeconds] = useState(0);
+  const [uptimeSeconds, setUptimeSeconds] = useState<number | null>(null);
 
   const [redisConnected, setRedisConnected] = useState(false);
   const [name, setName] = useState('');
@@ -68,7 +36,7 @@ function App() {
   const [saving, setSaving] = useState(false);
 
   /**
-   * Load Kubernetes information from the backend.
+   * Load Kubernetes environment values from the backend.
    */
   useEffect(() => {
     const loadConfig = async () => {
@@ -83,13 +51,14 @@ function App() {
 
         setClusterConfig(data);
 
-        /**
-         * podStartTime comes from the Kubernetes API.
-         *
-         * We calculate the current uptime once when the
-         * configuration is loaded.
-         */
-        setUptimeSeconds(getInitialUptime(data.podStartTime));
+        if (data.podStartTime) {
+          const startTime = new Date(data.podStartTime).getTime();
+          const now = Date.now();
+
+          setUptimeSeconds(
+            Math.max(0, Math.floor((now - startTime) / 1000))
+          );
+        }
       } catch (error) {
         console.error('Failed to load cluster config:', error);
 
@@ -103,7 +72,7 @@ function App() {
           restartCount: 0,
         });
 
-        setUptimeSeconds(0);
+        setUptimeSeconds(null);
       }
     };
 
@@ -111,24 +80,58 @@ function App() {
   }, []);
 
   /**
-   * Pod uptime counter.
+   * Keep Pod uptime counter running every second.
    *
-   * The initial value comes from Kubernetes podStartTime.
-   * After that, the browser increments the counter every second.
+   * The counter is calculated from the Kubernetes Pod start time,
+   * rather than simply incrementing from zero when the browser loads.
    */
   useEffect(() => {
     if (!clusterConfig.podStartTime) {
       return;
     }
 
-    const interval = window.setInterval(() => {
-      setUptimeSeconds((previous) => previous + 1);
-    }, 1000);
+    const updateUptime = () => {
+      const startTime = new Date(clusterConfig.podStartTime!).getTime();
+
+      if (Number.isNaN(startTime)) {
+        setUptimeSeconds(null);
+        return;
+      }
+
+      const now = Date.now();
+
+      setUptimeSeconds(
+        Math.max(0, Math.floor((now - startTime) / 1000))
+      );
+    };
+
+    updateUptime();
+
+    const interval = window.setInterval(updateUptime, 1000);
 
     return () => {
       window.clearInterval(interval);
     };
   }, [clusterConfig.podStartTime]);
+
+  /**
+   * Format uptime seconds as HH:MM:SS.
+   */
+  const formatUptime = (seconds: number | null) => {
+    if (seconds === null) {
+      return 'Unavailable';
+    }
+
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+
+    return [
+      hours.toString().padStart(2, '0'),
+      minutes.toString().padStart(2, '0'),
+      remainingSeconds.toString().padStart(2, '0'),
+    ].join(':');
+  };
 
   /**
    * Check Redis connectivity.
@@ -250,12 +253,15 @@ function App() {
           <p>Kubernetes Environment Dashboard</p>
         </div>
 
-        <span className="status">
-          Pod Uptime: {formatUptime(uptimeSeconds)}
-        </span>
+        <span className="status">● Demo</span>
       </header>
 
       <main className="dashboard">
+        <div className="card">
+          <span>Pod Uptime</span>
+          <strong>{formatUptime(uptimeSeconds)}</strong>
+        </div>
+
         <div className="card">
           <span>Pod IP</span>
           <strong>{clusterConfig.podIp}</strong>
