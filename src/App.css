@@ -53,3 +53,56 @@
 .card strong {
   font-size: 1.2rem;
 }
+
+.redis-card {
+  grid-column: span 3;
+}
+
+.redis-form {
+  margin-top: 20px;
+}
+
+.input-row {
+  display: flex;
+  gap: 10px;
+}
+
+.input-row input,
+.magic-number-form input {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 1rem;
+}
+
+.input-row button,
+.magic-number-form button {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  background: #023b81;
+  color: white;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.input-row button:disabled,
+.magic-number-form button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.magic-number-form {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.redis-message {
+  margin-top: 15px;
+}
+
+.redis-success {
+  margin-top: 15px;
+}

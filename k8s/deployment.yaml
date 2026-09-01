@@ -3,35 +3,47 @@ kind: Deployment
 metadata:
   name: clusterscope-frontend
   namespace: clusterscope
+
 spec:
   replicas: 2
+
   selector:
     matchLabels:
       app: clusterscope-frontend
+
   template:
     metadata:
       labels:
         app: clusterscope-frontend
+
     spec:
-      volumes:
-      - name: nginx-cache
-        emptyDir: {}
-      - name: nginx-run
-        emptyDir: {}
       containers:
         - name: frontend
           image: ghcr.io/hasan92mari/clusterscope-frontend:latest
           imagePullPolicy: Always
+
           ports:
             - containerPort: 8080
+              protocol: TCP
+
           livenessProbe:
             httpGet:
-              path: /
+              path: /healthz
               port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
           readinessProbe:
             httpGet:
-              path: /
+              path: /readyz
               port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+
           resources:
             requests:
               cpu: "100m"
@@ -39,35 +51,59 @@ spec:
             limits:
               cpu: "200m"
               memory: "128Mi"
+
           securityContext:
-            runAsUser: 101
-            runAsGroup: 101
+            runAsUser: 1000
+            runAsGroup: 1000
             runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
             seccompProfile:
               type: RuntimeDefault
-          volumeMounts:
-          - name: nginx-cache
-            mountPath: /var/cache/nginx
-          - name: nginx-run
-            mountPath: /var/run/nginx
+
           env:
-          - name: POD_NAME
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.name
-          - name: POD_NAMESPACE
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.namespace
-          - name: NODE_NAME
-            valueFrom:
-              fieldRef:
-                fieldPath: spec.nodeName
-          - name: POD_IP
-            valueFrom:
-              fieldRef:
-                fieldPath: status.podIP
-          - name: APP_NAME
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.labels['app']
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+
+            - name: APP_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['app']
+
+            - name: REDIS_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: clusterscope-redis
+                  key: host
+
+            - name: REDIS_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: clusterscope-redis
+                  key: port
+
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clusterscope-redis
+                  key: password
