@@ -45,13 +45,8 @@ const serviceAccountCaPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.c
 /**
  * Get information about the current Kubernetes Pod.
  *
- * This information cannot be provided by the Downward API:
- *
- * - status.startTime
- * - containerStatuses[].restartCount
- *
- * Therefore we query the Kubernetes API using the Pod's
- * ServiceAccount.
+ * The Pod start time and container restart count are obtained
+ * from the Kubernetes API using the Pod's ServiceAccount.
  */
 async function getCurrentPodInfo() {
     /**
@@ -112,7 +107,13 @@ async function getCurrentPodInfo() {
                         return;
                     }
                     try {
-                        resolve(JSON.parse(body));
+                        const parsedBody = JSON.parse(body);
+                        if (typeof parsedBody !== "object" ||
+                            parsedBody === null) {
+                            reject(new Error("Kubernetes API returned an invalid response"));
+                            return;
+                        }
+                        resolve(parsedBody);
                     }
                     catch {
                         reject(new Error("Kubernetes API returned invalid JSON"));
@@ -125,27 +126,18 @@ async function getCurrentPodInfo() {
             request.on("error", reject);
             request.end();
         });
-        /**
-         * Pod start time.
-         *
-         * Example:
-         * 2026-09-01T13:28:44Z
-         */
-        const startTime = typeof podData?.status?.startTime === "string"
+        /* ========================================================
+           Pod start time
+           ======================================================== */
+        const startTime = typeof podData.status?.startTime === "string"
             ? podData.status.startTime
             : null;
-        /**
-         * Container restart count.
-         */
-        const containerStatuses = Array.isArray(podData?.status?.containerStatuses)
+        /* ========================================================
+           Container restart count
+           ======================================================== */
+        const containerStatuses = Array.isArray(podData.status?.containerStatuses)
             ? podData.status.containerStatuses
             : [];
-        /**
-         * ClusterScope currently has one application container.
-         *
-         * We use the total of restart counts so this continues
-         * to work if another container is added later.
-         */
         const restartCount = containerStatuses.reduce((total, container) => {
             return total + Number(container.restartCount || 0);
         }, 0);
