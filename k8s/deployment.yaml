@@ -5,7 +5,7 @@ metadata:
   namespace: clusterscope
 
 spec:
-  replicas: 2
+  replicas: 1
 
   selector:
     matchLabels:
@@ -57,7 +57,7 @@ spec:
             runAsGroup: 1000
             runAsNonRoot: true
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
+            # readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL
@@ -84,26 +84,24 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
+          
+            - name: POD_START_TIME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.creationTimestamp
+
+            - name: POD_START_TIME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.creationTimestamp
 
             - name: APP_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.labels['app']
 
-            - name: REDIS_HOST
+            - name: REDIS_URL
               valueFrom:
                 secretKeyRef:
                   name: clusterscope-redis
-                  key: host
-
-            - name: REDIS_PORT
-              valueFrom:
-                secretKeyRef:
-                  name: clusterscope-redis
-                  key: port
-
-            - name: REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: clusterscope-redis
-                  key: password
+                  key: url

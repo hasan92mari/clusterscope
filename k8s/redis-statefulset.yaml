@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clusterscope-redis
+  namespace: clusterscope
+spec:
+  serviceName: clusterscope-redis
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: clusterscope-redis
+
+  template:
+    metadata:
+      labels:
+        app: clusterscope-redis
+
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+
+          command:
+            - redis-server
+            - --appendonly
+            - "yes"
+            - --requirepass
+            - "$(REDIS_PASSWORD)"
+
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clusterscope-redis
+                  key: password
+
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+
+          securityContext:
+            # runAsUser: 999
+            # runAsGroup: 999
+            # runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+
+      spec:
+        accessModes:
+          - ReadWriteOnce
+
+        resources:
+          requests:
+            storage: 1Gi
