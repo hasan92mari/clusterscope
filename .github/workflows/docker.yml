@@ -1,5 +1,4 @@
 name: Docker
-
 on:
   workflow_dispatch:
 
@@ -60,7 +59,7 @@ jobs:
           docker run -d \
             --name clusterscope \
             -p 8080:8080 \
-            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository_owner }}/clusterscope-frontend:latest
 
           sleep 3
 
