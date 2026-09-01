@@ -2,19 +2,12 @@ name: Docker
 
 on:
   workflow_dispatch:
+
   push:
     branches:
       - main
     paths:
-      - 'src/**'
-      - 'public/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'Dockerfile'
-      - '.dockerignore'
-      - 'vite.config.ts'
-      - 'tsconfig*.json'
-      - 'eslint.config.js'
+      - 'frontend/**'
 
 jobs:
   docker:
@@ -23,6 +16,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+
+    defaults:
+      run:
+        working-directory: frontend
 
     steps:
       - name: Checkout repository
@@ -44,7 +41,8 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
         with:
-          context: .
+          context: ./frontend
+          file: ./frontend/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
@@ -56,9 +54,12 @@ jobs:
           docker run -d \
             --name clusterscope \
             -p 8080:8080 \
-            ghcr.io/hasan92mari/clusterscope-frontend:latest
+            ghcr.io/${{ github.repository }}:latest
+
           sleep 3
+
           curl --fail http://localhost:8080/healthz
+
           docker stop clusterscope
 
       - name: Cleanup container
