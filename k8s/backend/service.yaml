@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: clusterscope-backend
+  namespace: clusterscope
+  labels:
+    app: clusterscope-backend
+
+spec:
+  type: ClusterIP
+
+  selector:
+    app: clusterscope-backend
+
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
