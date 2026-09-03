@@ -50,17 +50,39 @@ spec:
                   fieldPath: spec.nodeName
 
             - name: APP_NAME
-              value: clusterscope-backend
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['app']
 
-            # PostgreSQL connection
-            - name: DATABASE_URL
-              value: "postgresql+psycopg://clusterscope:$(POSTGRES_PASSWORD)@clusterscope-postgres.clusterscope.svc.cluster.local:5432/clusterscope"
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: clusterscope-postgres
+                  key: username
 
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: clusterscope-postgres
                   key: password
+
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: clusterscope-postgres
+                  key: database
+
+            - name: POSTGRES_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: clusterscope-backend-config
+                  key: postgres-host
+
+            - name: POSTGRES_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: clusterscope-backend-config
+                  key: postgres-port
 
           livenessProbe:
             httpGet:

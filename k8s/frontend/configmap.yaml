@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: clusterscope-config
+  name: clusterscope-frontend-config
   namespace: clusterscope
 data:
   backend-url: "http://clusterscope-backend.clusterscope.svc.cluster.local:8000"

@@ -95,19 +95,19 @@ spec:
             - name: BACKEND_URL
               valueFrom:
                 configMapKeyRef:
-                  name: clusterscope-config
+                  name: clusterscope-frontend-config
                   key: backend-url
 
             - name: REDIS_HOST
               valueFrom:
                 configMapKeyRef:
-                  name: clusterscope-config
+                  name: clusterscope-frontend-config
                   key: redis-host
 
             - name: REDIS_PORT
               valueFrom:
                 configMapKeyRef:
-                  name: clusterscope-config
+                  name: clusterscope-frontend-config
                   key: redis-port
 
             - name: REDIS_PASSWORD

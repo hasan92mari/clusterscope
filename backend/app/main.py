@@ -4,7 +4,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.database import Base, SessionLocal, engine
+from app.database import Base, engine, get_db
 from app.models import MagicValue
 
 
@@ -21,15 +21,6 @@ def create_tables() -> None:
         print("Database connected and tables initialized.")
     except Exception as error:
         print(f"Database unavailable: {error}")
-
-
-def get_db():
-    db = SessionLocal()
-
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def get_pod_status() -> dict[str, str | int | None]:
@@ -82,6 +73,7 @@ def get_magic_value(
             .filter(MagicValue.name == name)
             .first()
         )
+
     except Exception as error:
         print(f"Database connection error: {error}")
 
@@ -101,6 +93,7 @@ def get_magic_value(
         "magicValue": magic_value.magic_value,
     }
 
+
 @app.post("/api/magic/{name}")
 def save_magic_value(
     name: str,
@@ -115,25 +108,36 @@ def save_magic_value(
             detail="magicValue is required",
         )
 
-    existing = (
-        db.query(MagicValue)
-        .filter(MagicValue.name == name)
-        .first()
-    )
-
-    if existing:
-        existing.magic_value = magic_value
-    else:
-        existing = MagicValue(
-            name=name,
-            magic_value=magic_value,
+    try:
+        existing = (
+            db.query(MagicValue)
+            .filter(MagicValue.name == name)
+            .first()
         )
-        db.add(existing)
 
-    db.commit()
-    db.refresh(existing)
+        if existing:
+            existing.magic_value = magic_value
+        else:
+            existing = MagicValue(
+                name=name,
+                magic_value=magic_value,
+            )
+            db.add(existing)
 
-    return {
-        "name": existing.name,
-        "magicValue": existing.magic_value,
-    }
+        db.commit()
+        db.refresh(existing)
+
+        return {
+            "name": existing.name,
+            "magicValue": existing.magic_value,
+        }
+
+    except Exception as error:
+        db.rollback()
+
+        print(f"Database error while saving magic value: {error}")
+
+        raise HTTPException(
+            status_code=503,
+            detail="Database unavailable",
+        )
