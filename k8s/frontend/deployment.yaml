@@ -92,8 +92,26 @@ spec:
                 fieldRef:
                   fieldPath: metadata.labels['app']
 
-            - name: REDIS_URL
+            - name: BACKEND_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: clusterscope-config
+                  key: backend-url
+
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: clusterscope-config
+                  key: redis-host
+
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: clusterscope-config
+                  key: redis-port
+
+            - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: clusterscope-redis
-                  key: url
+                  key: password

@@ -8,6 +8,9 @@ import https from "https";
 const app = express();
 const port = Number(process.env.PORT) || 8080;
 
+const backendUrl =
+  process.env.BACKEND_URL || "http://localhost:8000";
+
 app.use(express.json());
 
 const __filename = fileURLToPath(import.meta.url);
@@ -17,7 +20,18 @@ const __dirname = path.dirname(__filename);
    Redis
    ============================================================ */
 
-const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+const redisHost =
+  process.env.REDIS_HOST || "localhost";
+
+const redisPort =
+  process.env.REDIS_PORT || "6379";
+
+const redisPassword =
+  process.env.REDIS_PASSWORD;
+
+const redisUrl = redisPassword
+  ? `redis://:${encodeURIComponent(redisPassword)}@${redisHost}:${redisPort}`
+  : `redis://${redisHost}:${redisPort}`;
 
 const redis = createClient({
   url: redisUrl,
@@ -423,6 +437,57 @@ app.post("/api/session/:name", async (req, res) => {
     });
   }
 });
+
+/* ============================================================
+   Backend API
+   ============================================================ */
+
+/**
+ * Proxy backend status through the frontend server.
+ *
+ * The browser never connects directly to the backend.
+ * In Kubernetes, BACKEND_URL points to the internal
+ * Kubernetes Service:
+ *
+ * http://clusterscope-backend:8000
+ */
+app.get("/api/backend/status", async (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+
+  try {
+    const response = await fetch(
+      `${backendUrl}/api/status`,
+      {
+        cache: "no-store",
+      }
+    );
+
+    if (!response.ok) {
+      return res.status(502).json({
+        connected: false,
+        error: `Backend returned HTTP ${response.status}`,
+      });
+    }
+
+    const data: unknown = await response.json();
+
+    res.status(200).json({
+      connected: true,
+      data,
+    });
+  } catch (error) {
+    console.error(
+      "Backend connection error:",
+      error
+    );
+
+    res.status(502).json({
+      connected: false,
+      error: "Backend unavailable",
+    });
+  }
+});
+
 
 /* ============================================================
    Static frontend
