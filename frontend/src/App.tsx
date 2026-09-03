@@ -32,35 +32,53 @@ function App() {
     restartCount: 0,
   });
 
-  const [uptimeSeconds, setUptimeSeconds] = useState<number | null>(null);
-
-  const [backendStatus, setBackendStatus] =
-  useState<BackendStatus | null>(null);
-
-  const [backendConnected, setBackendConnected] =
-  useState(false);
-
-  const [backendLoading, setBackendLoading] =
-  useState(false);
-
-  const [redisConnected, setRedisConnected] = useState(false);
-  const [name, setName] = useState('');
-  const [magicNumber, setMagicNumber] = useState('');
-  const [foundMagicNumber, setFoundMagicNumber] = useState<string | null>(
+  const [uptimeSeconds, setUptimeSeconds] = useState<number | null>(
     null
   );
+
+  const [backendStatus, setBackendStatus] =
+    useState<BackendStatus | null>(null);
+
+  const [backendConnected, setBackendConnected] = useState(false);
+
+  const [backendLoading, setBackendLoading] = useState(false);
+
+  const [backendMagicValue, setBackendMagicValue] =
+    useState<string | null>(null);
+
+  const [backendMagicLoading, setBackendMagicLoading] =
+    useState(false);
+
+  const [backendMagicInput, setBackendMagicInput] = useState('');
+
+  const [backendMagicSaved, setBackendMagicSaved] = useState(false);
+
+  const [redisConnected, setRedisConnected] = useState(false);
+
+  const [name, setName] = useState('');
+
+  const [magicNumber, setMagicNumber] = useState('');
+
+  const [foundMagicNumber, setFoundMagicNumber] =
+    useState<string | null>(null);
+
   const [nameChecked, setNameChecked] = useState(false);
+
   const [saved, setSaved] = useState(false);
+
   const [checking, setChecking] = useState(false);
+
   const [saving, setSaving] = useState(false);
 
   /**
-   * Load Kubernetes environment values from the backend.
+   * Load Kubernetes environment values.
    */
   useEffect(() => {
     const loadConfig = async () => {
       try {
-        const response = await fetch('/api/config');
+        const response = await fetch('/api/config', {
+          cache: 'no-store',
+        });
 
         if (!response.ok) {
           throw new Error('Failed to load cluster config');
@@ -71,15 +89,24 @@ function App() {
         setClusterConfig(data);
 
         if (data.podStartTime) {
-          const startTime = new Date(data.podStartTime).getTime();
+          const startTime = new Date(
+            data.podStartTime
+          ).getTime();
+
           const now = Date.now();
 
           setUptimeSeconds(
-            Math.max(0, Math.floor((now - startTime) / 1000))
+            Math.max(
+              0,
+              Math.floor((now - startTime) / 1000)
+            )
           );
         }
       } catch (error) {
-        console.error('Failed to load cluster config:', error);
+        console.error(
+          'Failed to load cluster config:',
+          error
+        );
 
         setClusterConfig({
           podIp: 'Unavailable',
@@ -100,9 +127,6 @@ function App() {
 
   /**
    * Keep Pod uptime counter running every second.
-   *
-   * The counter is calculated from the Kubernetes Pod start time,
-   * rather than simply incrementing from zero when the browser loads.
    */
   useEffect(() => {
     if (!clusterConfig.podStartTime) {
@@ -110,7 +134,9 @@ function App() {
     }
 
     const updateUptime = () => {
-      const startTime = new Date(clusterConfig.podStartTime!).getTime();
+      const startTime = new Date(
+        clusterConfig.podStartTime!
+      ).getTime();
 
       if (Number.isNaN(startTime)) {
         setUptimeSeconds(null);
@@ -120,13 +146,19 @@ function App() {
       const now = Date.now();
 
       setUptimeSeconds(
-        Math.max(0, Math.floor((now - startTime) / 1000))
+        Math.max(
+          0,
+          Math.floor((now - startTime) / 1000)
+        )
       );
     };
 
     updateUptime();
 
-    const interval = window.setInterval(updateUptime, 1000);
+    const interval = window.setInterval(
+      updateUptime,
+      1000
+    );
 
     return () => {
       window.clearInterval(interval);
@@ -134,16 +166,25 @@ function App() {
   }, [clusterConfig.podStartTime]);
 
   /**
-   * Format uptime seconds as HH:MM:SS.
+   * Format uptime as HH:MM:SS.
    */
-  const formatUptime = (seconds: number | null) => {
+  const formatUptime = (
+    seconds: number | null
+  ) => {
     if (seconds === null) {
       return 'Unavailable';
     }
 
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const remainingSeconds = seconds % 60;
+    const hours = Math.floor(
+      seconds / 3600
+    );
+
+    const minutes = Math.floor(
+      (seconds % 3600) / 60
+    );
+
+    const remainingSeconds =
+      seconds % 60;
 
     return [
       hours.toString().padStart(2, '0'),
@@ -152,20 +193,24 @@ function App() {
     ].join(':');
   };
 
-
   /**
-   * Check backend connectivity and load backend information.
+   * Check Backend connectivity.
    */
   const checkBackendStatus = async () => {
     setBackendLoading(true);
 
     try {
-      const response = await fetch('/api/backend/status', {
-        cache: 'no-store',
-      });
+      const response = await fetch(
+        '/api/backend/status',
+        {
+          cache: 'no-store',
+        }
+      );
 
       if (!response.ok) {
-        throw new Error('Backend status request failed');
+        throw new Error(
+          `Backend status request failed: ${response.status}`
+        );
       }
 
       const data = await response.json();
@@ -173,50 +218,189 @@ function App() {
       if (!data.connected || !data.data) {
         setBackendConnected(false);
         setBackendStatus(null);
+        setBackendMagicValue(null);
         return;
       }
 
       setBackendConnected(true);
       setBackendStatus(data.data);
     } catch (error) {
-      console.error('Failed to connect to backend:', error);
+      console.error(
+        'Failed to connect to backend:',
+        error
+      );
 
       setBackendConnected(false);
       setBackendStatus(null);
+      setBackendMagicValue(null);
     } finally {
       setBackendLoading(false);
     }
   };
 
-  
   /**
-   * Check Redis connectivity.
+   * Load the PostgreSQL magic value whenever
+   * the Backend is connected and a name is selected.
    */
   useEffect(() => {
-    const checkRedisStatus = async () => {
+    const trimmedName = name.trim();
+
+    if (!backendConnected || !trimmedName) {
+      return;
+    }
+
+    const loadBackendMagicValue = async () => {
+      setBackendMagicLoading(true);
+      setBackendMagicSaved(false);
+
       try {
-        const response = await fetch('/api/session/status');
+        const response = await fetch(
+          `/api/backend/magic/${encodeURIComponent(trimmedName)}`,
+          {
+            cache: 'no-store',
+          }
+        );
+
+        if (response.status === 404) {
+          setBackendMagicValue(null);
+          return;
+        }
 
         if (!response.ok) {
-          throw new Error('Redis status request failed');
+          throw new Error(
+            `Backend magic request failed: ${response.status}`
+          );
         }
 
         const data = await response.json();
 
-        setRedisConnected(data.connected === true);
-      } catch {
-        setRedisConnected(false);
+        console.log(
+          'PostgreSQL magic value:',
+          data
+        );
+
+        setBackendMagicValue(data.magicValue);
+      } catch (error) {
+        console.error(
+          'Failed to load PostgreSQL magic value:',
+          error
+        );
+
+        setBackendMagicValue(null);
+      } finally {
+        setBackendMagicLoading(false);
       }
     };
+
+    loadBackendMagicValue();
+  }, [backendConnected, name]);
+
+  /**
+   * Create or update the PostgreSQL magic value.
+   */
+  const updateBackendMagicValue =
+    async () => {
+      const trimmedName = name.trim();
+
+      const trimmedMagicValue =
+        backendMagicInput.trim();
+
+      if (
+        !trimmedName ||
+        !trimmedMagicValue
+      ) {
+        return;
+      }
+
+      setBackendMagicLoading(true);
+      setBackendMagicSaved(false);
+
+      try {
+        const response = await fetch(
+          `/api/backend/magic/${encodeURIComponent(
+            trimmedName
+          )}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type':
+                'application/json',
+            },
+            body: JSON.stringify({
+              magicValue:
+                trimmedMagicValue,
+            }),
+          }
+        );
+
+        const data =
+          await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.detail ||
+              'Failed to update backend magic value'
+          );
+        }
+
+        setBackendMagicValue(
+          data.magicValue
+        );
+
+        setBackendMagicInput('');
+
+        setBackendMagicSaved(true);
+      } catch (error) {
+        console.error(
+          'Failed to update backend magic value:',
+          error
+        );
+      } finally {
+        setBackendMagicLoading(false);
+      }
+    };
+
+  /**
+   * Check Redis connectivity.
+   */
+  useEffect(() => {
+    const checkRedisStatus =
+      async () => {
+        try {
+          const response =
+            await fetch(
+              '/api/session/status',
+              {
+                cache: 'no-store',
+              }
+            );
+
+          if (!response.ok) {
+            throw new Error(
+              'Redis status request failed'
+            );
+          }
+
+          const data =
+            await response.json();
+
+          setRedisConnected(
+            data.connected === true
+          );
+        } catch {
+          setRedisConnected(false);
+        }
+      };
 
     checkRedisStatus();
   }, []);
 
   /**
-   * Check whether a name already exists in Redis.
+   * Check whether a name exists in Redis.
    */
   const checkName = async () => {
-    const trimmedName = name.trim();
+    const trimmedName =
+      name.trim();
 
     if (!trimmedName) {
       return;
@@ -229,11 +413,18 @@ function App() {
     setSaved(false);
 
     try {
-      const response = await fetch(
-        `/api/session/${encodeURIComponent(trimmedName)}`
-      );
+      const response =
+        await fetch(
+          `/api/session/${encodeURIComponent(
+            trimmedName
+          )}`,
+          {
+            cache: 'no-store',
+          }
+        );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!data.connected) {
         setRedisConnected(false);
@@ -241,10 +432,13 @@ function App() {
       }
 
       setRedisConnected(true);
+
       setNameChecked(true);
 
       if (data.found) {
-        setFoundMagicNumber(data.magicNumber);
+        setFoundMagicNumber(
+          data.magicNumber
+        );
       }
     } catch {
       setRedisConnected(false);
@@ -254,13 +448,19 @@ function App() {
   };
 
   /**
-   * Save a new magic number or update an existing one.
+   * Save or update the Redis magic number.
    */
   const saveMagicNumber = async () => {
-    const trimmedName = name.trim();
-    const trimmedMagicNumber = magicNumber.trim();
+    const trimmedName =
+      name.trim();
 
-    if (!trimmedName || !trimmedMagicNumber) {
+    const trimmedMagicNumber =
+      magicNumber.trim();
+
+    if (
+      !trimmedName ||
+      !trimmedMagicNumber
+    ) {
       return;
     }
 
@@ -268,20 +468,26 @@ function App() {
     setSaved(false);
 
     try {
-      const response = await fetch(
-        `/api/session/${encodeURIComponent(trimmedName)}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            magicNumber: trimmedMagicNumber,
-          }),
-        }
-      );
+      const response =
+        await fetch(
+          `/api/session/${encodeURIComponent(
+            trimmedName
+          )}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type':
+                'application/json',
+            },
+            body: JSON.stringify({
+              magicNumber:
+                trimmedMagicNumber,
+            }),
+          }
+        );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!data.connected) {
         setRedisConnected(false);
@@ -291,7 +497,11 @@ function App() {
       if (data.saved) {
         setRedisConnected(true);
         setSaved(true);
-        setFoundMagicNumber(data.magicNumber);
+
+        setFoundMagicNumber(
+          data.magicNumber
+        );
+
         setMagicNumber('');
       }
     } catch {
@@ -306,56 +516,84 @@ function App() {
       <header className="header">
         <div>
           <h1>ClusterScope</h1>
-          <p>Kubernetes Environment Dashboard</p>
+          <p>
+            Kubernetes Environment Dashboard
+          </p>
         </div>
 
-        <span className="status">● Demo</span>
+        <span className="status">
+          ● Demo
+        </span>
       </header>
 
       <main className="dashboard">
+        {/* Kubernetes information */}
+
         <div className="card">
           <span>Pod Uptime</span>
-          <strong>{formatUptime(uptimeSeconds)}</strong>
+          <strong>
+            {formatUptime(
+              uptimeSeconds
+            )}
+          </strong>
         </div>
 
         <div className="card">
           <span>Pod IP</span>
-          <strong>{clusterConfig.podIp}</strong>
+          <strong>
+            {clusterConfig.podIp}
+          </strong>
         </div>
 
         <div className="card">
           <span>Namespace</span>
-          <strong>{clusterConfig.namespace}</strong>
+          <strong>
+            {clusterConfig.namespace}
+          </strong>
         </div>
 
         <div className="card">
           <span>Application</span>
-          <strong>{clusterConfig.appName}</strong>
+          <strong>
+            {clusterConfig.appName}
+          </strong>
         </div>
 
         <div className="card">
           <span>Pod</span>
-          <strong>{clusterConfig.podName}</strong>
+          <strong>
+            {clusterConfig.podName}
+          </strong>
         </div>
 
         <div className="card">
           <span>Node</span>
-          <strong>{clusterConfig.nodeName}</strong>
+          <strong>
+            {clusterConfig.nodeName}
+          </strong>
         </div>
 
         <div className="card">
           <span>Restart Count</span>
-          <strong>{clusterConfig.restartCount}</strong>
+          <strong>
+            {clusterConfig.restartCount}
+          </strong>
         </div>
+
+        {/* Redis */}
 
         <div className="card redis-card">
           <span>Redis</span>
 
           {!redisConnected ? (
-            <strong>Not connected</strong>
+            <strong>
+              Not connected
+            </strong>
           ) : (
             <>
-              <strong>Connected</strong>
+              <strong>
+                Connected
+              </strong>
 
               <div className="redis-form">
                 <div className="input-row">
@@ -364,14 +602,45 @@ function App() {
                     placeholder="Enter name"
                     value={name}
                     onChange={(event) => {
-                      setName(event.target.value);
-                      setNameChecked(false);
-                      setFoundMagicNumber(null);
-                      setMagicNumber('');
+                      setName(
+                        event.target.value
+                      );
+
+                      setNameChecked(
+                        false
+                      );
+
+                      setFoundMagicNumber(
+                        null
+                      );
+
+                      setMagicNumber(
+                        ''
+                      );
+
                       setSaved(false);
+
+                      /*
+                       * Clear the old PostgreSQL
+                       * value when the name changes.
+                       */
+                      setBackendMagicValue(
+                        null
+                      );
+
+                      setBackendMagicInput(
+                        ''
+                      );
+
+                      setBackendMagicSaved(
+                        false
+                      );
                     }}
                     onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
+                      if (
+                        event.key ===
+                        'Enter'
+                      ) {
                         checkName();
                       }
                     }}
@@ -379,30 +648,106 @@ function App() {
 
                   <button
                     type="button"
-                    onClick={checkName}
-                    disabled={!name.trim() || checking}
+                    onClick={
+                      checkName
+                    }
+                    disabled={
+                      !name.trim() ||
+                      checking
+                    }
                   >
-                    {checking ? 'Checking...' : '✓'}
+                    {checking
+                      ? 'Checking...'
+                      : '✓'}
                   </button>
                 </div>
 
-                {nameChecked && foundMagicNumber !== null && (
-                  <>
-                    <p className="redis-message">
-                      Your magic number is:{' '}
-                      <strong>{foundMagicNumber}</strong>
-                    </p>
+                {nameChecked &&
+                  foundMagicNumber !==
+                    null && (
+                    <>
+                      <p className="redis-message">
+                        Your magic number is:{' '}
+                        <strong>
+                          {
+                            foundMagicNumber
+                          }
+                        </strong>
+                      </p>
 
+                      <div className="magic-number-form">
+                        <input
+                          type="number"
+                          placeholder="Enter new magic number"
+                          value={
+                            magicNumber
+                          }
+                          onChange={(
+                            event
+                          ) =>
+                            setMagicNumber(
+                              event
+                                .target
+                                .value
+                            )
+                          }
+                          onKeyDown={(
+                            event
+                          ) => {
+                            if (
+                              event.key ===
+                              'Enter'
+                            ) {
+                              saveMagicNumber();
+                            }
+                          }}
+                        />
+
+                        <button
+                          type="button"
+                          onClick={
+                            saveMagicNumber
+                          }
+                          disabled={
+                            !magicNumber.trim() ||
+                            saving
+                          }
+                        >
+                          {saving
+                            ? 'Updating...'
+                            : 'Update'}
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                {nameChecked &&
+                  foundMagicNumber ===
+                    null &&
+                  !saved && (
                     <div className="magic-number-form">
                       <input
                         type="number"
-                        placeholder="Enter new magic number"
-                        value={magicNumber}
-                        onChange={(event) =>
-                          setMagicNumber(event.target.value)
+                        placeholder="Enter magic number"
+                        value={
+                          magicNumber
                         }
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
+                        onChange={(
+                          event
+                        ) =>
+                          setMagicNumber(
+                            event
+                              .target
+                              .value
+                          )
+                        }
+                        onKeyDown={(
+                          event
+                        ) => {
+                          if (
+                            event.key ===
+                            'Enter'
+                          ) {
                             saveMagicNumber();
                           }
                         }}
@@ -410,56 +755,46 @@ function App() {
 
                       <button
                         type="button"
-                        onClick={saveMagicNumber}
-                        disabled={!magicNumber.trim() || saving}
+                        onClick={
+                          saveMagicNumber
+                        }
+                        disabled={
+                          !magicNumber.trim() ||
+                          saving
+                        }
                       >
-                        {saving ? 'Updating...' : 'Update'}
+                        {saving
+                          ? 'Saving...'
+                          : 'Send'}
                       </button>
                     </div>
-                  </>
-                )}
-
-                {nameChecked && foundMagicNumber === null && !saved && (
-                  <div className="magic-number-form">
-                    <input
-                      type="number"
-                      placeholder="Enter magic number"
-                      value={magicNumber}
-                      onChange={(event) => setMagicNumber(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          saveMagicNumber();
-                        }
-                      }}
-                    />
-
-                    <button
-                      type="button"
-                      onClick={saveMagicNumber}
-                      disabled={!magicNumber.trim() || saving}
-                    >
-                      {saving ? 'Saving...' : 'Send'}
-                    </button>
-                  </div>
-                )}
+                  )}
 
                 {saved && (
                   <p className="redis-success">
-                    ✓ Magic number updated successfully
+                    ✓ Magic number
+                    updated successfully
                   </p>
                 )}
               </div>
             </>
           )}
         </div>
+
+        {/* Backend */}
+
         <div className="card backend-card">
           <div className="backend-header">
             <span>Backend</span>
 
             <button
               type="button"
-              onClick={checkBackendStatus}
-              disabled={backendLoading}
+              onClick={
+                checkBackendStatus
+              }
+              disabled={
+                backendLoading
+              }
             >
               {backendLoading
                 ? backendConnected
@@ -472,49 +807,207 @@ function App() {
           </div>
 
           {!backendConnected ? (
-            <strong>Backend not found</strong>
+            <strong>
+              Backend not found
+            </strong>
           ) : (
             <div className="backend-info-grid">
               <div className="info-item">
                 <span>Pod IP</span>
-                <strong>{backendStatus?.podIp ?? 'Unavailable'}</strong>
+                <strong>
+                  {backendStatus?.podIp ??
+                    'Unavailable'}
+                </strong>
               </div>
 
               <div className="info-item">
                 <span>Namespace</span>
-                <strong>{backendStatus?.namespace ?? 'Unavailable'}</strong>
+                <strong>
+                  {backendStatus?.namespace ??
+                    'Unavailable'}
+                </strong>
               </div>
 
               <div className="info-item">
                 <span>Application</span>
-                <strong>{backendStatus?.appName ?? 'Unavailable'}</strong>
+                <strong>
+                  {backendStatus?.appName ??
+                    'Unavailable'}
+                </strong>
               </div>
 
               <div className="info-item">
                 <span>Pod</span>
-                <strong>{backendStatus?.podName ?? 'Unavailable'}</strong>
+                <strong>
+                  {backendStatus?.podName ??
+                    'Unavailable'}
+                </strong>
               </div>
 
               <div className="info-item">
                 <span>Node</span>
-                <strong>{backendStatus?.nodeName ?? 'Unavailable'}</strong>
+                <strong>
+                  {backendStatus?.nodeName ??
+                    'Unavailable'}
+                </strong>
               </div>
 
               <div className="info-item">
                 <span>Restart Count</span>
-                <strong>{backendStatus?.restartCount ?? 0}</strong>
+                <strong>
+                  {backendStatus?.restartCount ??
+                    0}
+                </strong>
               </div>
 
               <div className="info-item">
-                <span>Pod Start Time</span>
+                <span>
+                  Pod Start Time
+                </span>
+
                 <strong>
-                  {backendStatus?.podStartTime ?? 'Unavailable'}
+                  {backendStatus?.podStartTime ??
+                    'Unavailable'}
                 </strong>
               </div>
             </div>
           )}
-        </div>
 
+          {/* PostgreSQL */}
+
+          {backendConnected &&
+            name.trim() && (
+              <div className="backend-magic-section">
+                <span>
+                  PostgreSQL
+                </span>
+
+                {backendMagicLoading ? (
+                  <strong>
+                    Loading...
+                  </strong>
+                ) : backendMagicValue !==
+                  null ? (
+                  <>
+                    <p className="backend-magic-message">
+                      Real magic value:{' '}
+                      <strong>
+                        {
+                          backendMagicValue
+                        }
+                      </strong>
+                    </p>
+
+                    <div className="magic-number-form">
+                      <input
+                        type="number"
+                        placeholder="Enter new real magic value"
+                        value={
+                          backendMagicInput
+                        }
+                        onChange={(
+                          event
+                        ) =>
+                          setBackendMagicInput(
+                            event
+                              .target
+                              .value
+                          )
+                        }
+                        onKeyDown={(
+                          event
+                        ) => {
+                          if (
+                            event.key ===
+                            'Enter'
+                          ) {
+                            updateBackendMagicValue();
+                          }
+                        }}
+                      />
+
+                      <button
+                        type="button"
+                        onClick={
+                          updateBackendMagicValue
+                        }
+                        disabled={
+                          !backendMagicInput.trim() ||
+                          backendMagicLoading
+                        }
+                      >
+                        {backendMagicLoading
+                          ? 'Updating...'
+                          : 'Update'}
+                      </button>
+                    </div>
+
+                    {backendMagicSaved && (
+                      <p className="backend-magic-success">
+                        ✓ Real magic
+                        value updated
+                        successfully
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p className="backend-magic-message">
+                      No real magic value
+                      found for{' '}
+                      <strong>
+                        {name.trim()}
+                      </strong>
+                    </p>
+
+                    <div className="magic-number-form">
+                      <input
+                        type="number"
+                        placeholder="Enter real magic value"
+                        value={
+                          backendMagicInput
+                        }
+                        onChange={(
+                          event
+                        ) =>
+                          setBackendMagicInput(
+                            event
+                              .target
+                              .value
+                          )
+                        }
+                        onKeyDown={(
+                          event
+                        ) => {
+                          if (
+                            event.key ===
+                            'Enter'
+                          ) {
+                            updateBackendMagicValue();
+                          }
+                        }}
+                      />
+
+                      <button
+                        type="button"
+                        onClick={
+                          updateBackendMagicValue
+                        }
+                        disabled={
+                          !backendMagicInput.trim() ||
+                          backendMagicLoading
+                        }
+                      >
+                        {backendMagicLoading
+                          ? 'Saving...'
+                          : 'Save'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+        </div>
       </main>
     </div>
   );
