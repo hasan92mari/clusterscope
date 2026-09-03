@@ -2,6 +2,12 @@ name: Frontend CI/CD
 
 on:
   workflow_dispatch:
+    inputs:
+      push:
+        description: "Push Docker image to GHCR"
+        required: true
+        default: false
+        type: boolean
 
   push:
     branches:
@@ -67,13 +73,17 @@ jobs:
     needs: frontend-validation
 
     # Containerization happens:
-    # - On Pull Requests to main -> build + smoke test only
-    # - On pushes to main       -> build + smoke test + push
+    # - Pull Request to main -> build + smoke test only
+    # - Push to feat/**       -> build + smoke test + push :dev
+    # - Push to main          -> build + smoke test + push :latest
+    # - Manual push=true      -> build + smoke test + push :dev
     #
-    # Feature branch pushes do NOT containerize.
+    # Manual push=false does not push an image.
+
     if: |
       github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch'
 
     permissions:
       contents: read
@@ -106,9 +116,9 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # --------------------------------------------------------
+      # ========================================================
       # Build image for smoke test
-      # --------------------------------------------------------
+      # ========================================================
 
       - name: Build Docker image
         uses: docker/build-push-action@v7
@@ -130,16 +140,41 @@ jobs:
 
           curl --fail http://localhost:8080/healthz
 
+      - name: Read container logs on failure
+        if: failure()
+        run: docker logs clusterscope
+
       - name: Cleanup container
         if: always()
         run: docker rm -f clusterscope
 
       # ========================================================
-      # Push image after merge to main
+      # Push development image
       # ========================================================
 
-      - name: Push Docker image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Push development image
+        if: |
+          (github.event_name == 'push' &&
+           startsWith(github.ref, 'refs/heads/feat/')) ||
+          (github.event_name == 'workflow_dispatch' &&
+           inputs.push == true)
+        uses: docker/build-push-action@v7
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/clusterscope-frontend:dev
+
+      # ========================================================
+      # Push production image
+      # ========================================================
+
+      - name: Push latest image
+        if: |
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v7
         with:
           context: ./frontend

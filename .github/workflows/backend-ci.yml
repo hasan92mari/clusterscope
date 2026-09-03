@@ -2,6 +2,12 @@ name: Backend CI/CD
 
 on:
   workflow_dispatch:
+    inputs:
+      push:
+        description: "Push Docker image to GHCR"
+        required: true
+        default: false
+        type: boolean
 
   push:
     branches:
@@ -61,15 +67,15 @@ jobs:
 
     needs: backend-validation
 
-    # Containerization happens:
-    # - On Pull Requests to main -> build + smoke test only
-    # - On pushes to main       -> build + smoke test + push
-    #
-    # Feature branch pushes do NOT containerize.
-
+    # Run containerization for:
+    # - Pull Requests to main
+    # - Pushes to main
+    # - Pushes to feat/** branches
+    # - Manual workflow dispatch
     if: |
       github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch'
 
     permissions:
       contents: read
@@ -134,12 +140,15 @@ jobs:
         if: always()
         run: docker rm -f clusterscope-backend
 
+
       # ========================================================
-      # Push image after merge to main
+      # Push image
       # ========================================================
 
-      - name: Push Docker image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Push development image
+        if: |
+          (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feat/')) ||
+          (github.event_name == 'workflow_dispatch' && inputs.push == true)
         uses: docker/build-push-action@v7
         with:
           context: ./backend
@@ -147,5 +156,16 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository_owner }}/clusterscope-backend:${{ steps.image-tag.outputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/clusterscope-backend:dev
+
+      - name: Push latest image
+        if: |
+          github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
             ghcr.io/${{ github.repository_owner }}/clusterscope-backend:latest
