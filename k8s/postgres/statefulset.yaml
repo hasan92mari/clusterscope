@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clusterscope-postgres
+  namespace: clusterscope
+  labels:
+    app: clusterscope-postgres
+
+spec:
+  serviceName: clusterscope-postgres
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: clusterscope-postgres
+
+  template:
+    metadata:
+      labels:
+        app: clusterscope-postgres
+
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: clusterscope-postgres
+                  key: database
+
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: clusterscope-postgres
+                  key: username
+
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clusterscope-postgres
+                  key: password
+
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          # securityContext:
+          #   allowPrivilegeEscalation: false
+          #   capabilities:
+          #     drop:
+          #       - ALL
+
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+
+      spec:
+        accessModes:
+          - ReadWriteOnce
+
+        storageClassName: manual
+
+        resources:
+          requests:
+            storage: 1Gi

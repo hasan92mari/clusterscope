@@ -5,6 +5,7 @@ metadata:
   namespace: clusterscope
   labels:
     app: clusterscope-backend
+
 spec:
   replicas: 1
 
@@ -49,7 +50,39 @@ spec:
                   fieldPath: spec.nodeName
 
             - name: APP_NAME
-              value: clusterscope-backend
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['app']
+
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: clusterscope-postgres
+                  key: username
+
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clusterscope-postgres
+                  key: password
+
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: clusterscope-postgres
+                  key: database
+
+            - name: POSTGRES_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: clusterscope-backend-config
+                  key: postgres-host
+
+            - name: POSTGRES_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: clusterscope-backend-config
+                  key: postgres-port
 
           livenessProbe:
             httpGet:
@@ -62,9 +95,9 @@ spec:
 
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: 8000
-            initialDelaySeconds: 3
+            initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 2
             failureThreshold: 3
