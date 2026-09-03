@@ -5,6 +5,7 @@ metadata:
   namespace: clusterscope
   labels:
     app: clusterscope-backend
+
 spec:
   replicas: 1
 
@@ -51,6 +52,16 @@ spec:
             - name: APP_NAME
               value: clusterscope-backend
 
+            # PostgreSQL connection
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://clusterscope:$(POSTGRES_PASSWORD)@clusterscope-postgres.clusterscope.svc.cluster.local:5432/clusterscope"
+
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clusterscope-postgres
+                  key: password
+
           livenessProbe:
             httpGet:
               path: /healthz
@@ -62,9 +73,9 @@ spec:
 
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: 8000
-            initialDelaySeconds: 3
+            initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 2
             failureThreshold: 3
