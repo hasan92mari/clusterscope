@@ -452,9 +452,14 @@ app.post("/api/session/:name", async (req, res) => {
  * http://clusterscope-backend:8000
  */
 app.get("/api/backend/status", async (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+
   try {
     const response = await fetch(
-      `${backendUrl}/api/status`
+      `${backendUrl}/api/status`,
+      {
+        cache: "no-store",
+      }
     );
 
     if (!response.ok) {

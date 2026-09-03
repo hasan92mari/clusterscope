@@ -160,7 +160,9 @@ function App() {
     setBackendLoading(true);
 
     try {
-      const response = await fetch('/api/backend/status');
+      const response = await fetch('/api/backend/status', {
+        cache: 'no-store',
+      });
 
       if (!response.ok) {
         throw new Error('Backend status request failed');
