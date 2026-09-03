@@ -16,7 +16,11 @@ app = FastAPI(
 
 @app.on_event("startup")
 def create_tables() -> None:
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("Database connected and tables initialized.")
+    except Exception as error:
+        print(f"Database unavailable: {error}")
 
 
 def get_db():
@@ -72,11 +76,19 @@ def get_magic_value(
     name: str,
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
-    magic_value = (
-        db.query(MagicValue)
-        .filter(MagicValue.name == name)
-        .first()
-    )
+    try:
+        magic_value = (
+            db.query(MagicValue)
+            .filter(MagicValue.name == name)
+            .first()
+        )
+    except Exception as error:
+        print(f"Database connection error: {error}")
+
+        raise HTTPException(
+            status_code=503,
+            detail="Database unavailable",
+        )
 
     if magic_value is None:
         raise HTTPException(
