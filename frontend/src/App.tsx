@@ -246,7 +246,6 @@ function App() {
     const trimmedName = name.trim();
 
     if (!backendConnected || !trimmedName) {
-      setBackendMagicValue(null);
       return;
     }
 
@@ -256,9 +255,7 @@ function App() {
 
       try {
         const response = await fetch(
-          `/api/backend/magic/${encodeURIComponent(
-            trimmedName
-          )}`,
+          `/api/backend/magic/${encodeURIComponent(trimmedName)}`,
           {
             cache: 'no-store',
           }
@@ -282,9 +279,7 @@ function App() {
           data
         );
 
-        setBackendMagicValue(
-          data.magicValue
-        );
+        setBackendMagicValue(data.magicValue);
       } catch (error) {
         console.error(
           'Failed to load PostgreSQL magic value:',
