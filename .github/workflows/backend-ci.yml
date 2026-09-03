@@ -126,6 +126,10 @@ jobs:
 
           curl --fail http://localhost:8000/healthz
 
+      - name: Read container logs on failure
+        if: failure()
+        run: docker logs clusterscope-backend
+
       - name: Cleanup container
         if: always()
         run: docker rm -f clusterscope-backend
