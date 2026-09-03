@@ -106,3 +106,54 @@
 .redis-success {
   margin-top: 15px;
 }
+
+.backend-card {
+  grid-column: 1 / -1;
+}
+
+.backend-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.backend-header button {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.backend-header button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.backend-info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.info-item span {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.info-item strong {
+  word-break: break-word;
+}
+
+@media (max-width: 768px) {
+  .backend-info-grid {
+    grid-template-columns: 1fr;
+  }
+}

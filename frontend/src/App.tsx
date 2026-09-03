@@ -11,6 +11,16 @@ interface ClusterConfig {
   restartCount: number;
 }
 
+interface BackendStatus {
+  podIp: string | null;
+  namespace: string | null;
+  appName: string | null;
+  podName: string | null;
+  nodeName: string | null;
+  podStartTime: string | null;
+  restartCount: number;
+}
+
 function App() {
   const [clusterConfig, setClusterConfig] = useState<ClusterConfig>({
     podIp: 'Loading...',
@@ -23,6 +33,15 @@ function App() {
   });
 
   const [uptimeSeconds, setUptimeSeconds] = useState<number | null>(null);
+
+  const [backendStatus, setBackendStatus] =
+  useState<BackendStatus | null>(null);
+
+  const [backendConnected, setBackendConnected] =
+  useState(false);
+
+  const [backendLoading, setBackendLoading] =
+  useState(false);
 
   const [redisConnected, setRedisConnected] = useState(false);
   const [name, setName] = useState('');
@@ -133,6 +152,41 @@ function App() {
     ].join(':');
   };
 
+
+  /**
+   * Check backend connectivity and load backend information.
+   */
+  const checkBackendStatus = async () => {
+    setBackendLoading(true);
+
+    try {
+      const response = await fetch('/api/backend/status');
+
+      if (!response.ok) {
+        throw new Error('Backend status request failed');
+      }
+
+      const data = await response.json();
+
+      if (!data.connected || !data.data) {
+        setBackendConnected(false);
+        setBackendStatus(null);
+        return;
+      }
+
+      setBackendConnected(true);
+      setBackendStatus(data.data);
+    } catch (error) {
+      console.error('Failed to connect to backend:', error);
+
+      setBackendConnected(false);
+      setBackendStatus(null);
+    } finally {
+      setBackendLoading(false);
+    }
+  };
+
+  
   /**
    * Check Redis connectivity.
    */
@@ -396,6 +450,69 @@ function App() {
             </>
           )}
         </div>
+        <div className="card backend-card">
+          <div className="backend-header">
+            <span>Backend</span>
+
+            <button
+              type="button"
+              onClick={checkBackendStatus}
+              disabled={backendLoading}
+            >
+              {backendLoading
+                ? backendConnected
+                  ? 'Refreshing...'
+                  : 'Connecting...'
+                : backendConnected
+                  ? 'Refresh'
+                  : 'Connect'}
+            </button>
+          </div>
+
+          {!backendConnected ? (
+            <strong>Backend not found</strong>
+          ) : (
+            <div className="backend-info-grid">
+              <div className="info-item">
+                <span>Pod IP</span>
+                <strong>{backendStatus?.podIp ?? 'Unavailable'}</strong>
+              </div>
+
+              <div className="info-item">
+                <span>Namespace</span>
+                <strong>{backendStatus?.namespace ?? 'Unavailable'}</strong>
+              </div>
+
+              <div className="info-item">
+                <span>Application</span>
+                <strong>{backendStatus?.appName ?? 'Unavailable'}</strong>
+              </div>
+
+              <div className="info-item">
+                <span>Pod</span>
+                <strong>{backendStatus?.podName ?? 'Unavailable'}</strong>
+              </div>
+
+              <div className="info-item">
+                <span>Node</span>
+                <strong>{backendStatus?.nodeName ?? 'Unavailable'}</strong>
+              </div>
+
+              <div className="info-item">
+                <span>Restart Count</span>
+                <strong>{backendStatus?.restartCount ?? 0}</strong>
+              </div>
+
+              <div className="info-item">
+                <span>Pod Start Time</span>
+                <strong>
+                  {backendStatus?.podStartTime ?? 'Unavailable'}
+                </strong>
+              </div>
+            </div>
+          )}
+        </div>
+
       </main>
     </div>
   );
