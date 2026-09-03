@@ -88,3 +88,40 @@ def get_magic_value(
         "name": magic_value.name,
         "magicValue": magic_value.magic_value,
     }
+
+@app.post("/api/magic/{name}")
+def save_magic_value(
+    name: str,
+    payload: dict[str, str],
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    magic_value = payload.get("magicValue")
+
+    if not magic_value:
+        raise HTTPException(
+            status_code=400,
+            detail="magicValue is required",
+        )
+
+    existing = (
+        db.query(MagicValue)
+        .filter(MagicValue.name == name)
+        .first()
+    )
+
+    if existing:
+        existing.magic_value = magic_value
+    else:
+        existing = MagicValue(
+            name=name,
+            magic_value=magic_value,
+        )
+        db.add(existing)
+
+    db.commit()
+    db.refresh(existing)
+
+    return {
+        "name": existing.name,
+        "magicValue": existing.magic_value,
+    }
