@@ -1,0 +1,332 @@
+name: Frontend CI/CD
+
+on:
+  workflow_dispatch:
+    inputs:
+      push:
+        description: "Push Docker image to GHCR"
+        required: true
+        default: false
+        type: boolean
+
+  push:
+    branches:
+      - main
+      - 'feat/**'
+    paths:
+      - 'frontend/**'
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+
+
+# ============================================================
+# Workflow Environment
+# ============================================================
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/clusterscope-frontend
+  IMAGE_TAG: "v${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}"
+
+
+jobs:
+
+  # ============================================================
+  # Frontend Validation
+  # ============================================================
+
+  frontend-validation:
+    name: Frontend Validation
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      # Add tests later
+      # - name: Test
+      #   run: npm test
+
+
+  # ============================================================
+  # Frontend Image Build
+  # ============================================================
+
+  frontend-build:
+    name: Frontend Docker Build
+    runs-on: ubuntu-latest
+
+    needs: frontend-validation
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # --------------------------------------------------------
+      # Build The Image
+      #
+      # No push.
+      #
+      # The result is stored as an OCI image archive and passed
+      # to the next job as a GitHub Actions artifact.
+      # --------------------------------------------------------
+
+      - name: Build multi-platform Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+
+          platforms: linux/amd64,linux/arm64
+
+          outputs: type=oci,dest=/tmp/clusterscope-frontend.tar
+
+          cache-from: |
+            type=gha,scope=clusterscope-frontend
+
+          cache-to: |
+            type=gha,mode=max,scope=clusterscope-frontend
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-image-${{ github.run_id }}
+          path: /tmp/clusterscope-frontend.tar
+          retention-days: 1
+
+
+  # ============================================================
+  # Frontend Smoke Test
+  # ============================================================
+
+  frontend-smoke-test:
+    name: Frontend Smoke Test
+    runs-on: ubuntu-latest
+
+    needs: frontend-build
+
+    steps:
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-image-${{ github.run_id }}
+          path: /tmp/frontend-image
+
+      - name: Load Docker image
+        run: |
+          docker load \
+            --input /tmp/frontend-image/clusterscope-frontend.tar
+
+      - name: Smoke test
+        run: |
+          docker run -d \
+            --name clusterscope \
+            -p 8080:8080 \
+            clusterscope-frontend:latest
+
+          sleep 3
+
+          curl --fail \
+            --retry 3 \
+            --retry-delay 1 \
+            http://localhost:8080/healthz
+
+      # --------------------------------------------------------
+      # Always collect the test result
+      #
+      # IMPORTANT:
+      # This does NOT hide a failure.
+      # The Smoke Test step above can still fail the job.
+      # --------------------------------------------------------
+
+      - name: Collect smoke test result
+        if: always()
+        run: |
+          {
+            echo "Frontend Smoke Test"
+            echo "==================="
+            echo ""
+            echo "Health endpoint:"
+            curl -sS http://localhost:8080/healthz || true
+            echo ""
+            echo ""
+            echo "Container status:"
+            docker ps -a --filter name=clusterscope
+            echo ""
+            echo "Container inspect:"
+            docker inspect clusterscope \
+              --format '{{.State.Status}} - ExitCode={{.State.ExitCode}}' \
+              2>/dev/null || true
+          } > frontend-smoke-test.log
+
+      # --------------------------------------------------------
+      # Always collect Docker logs
+      # --------------------------------------------------------
+
+      - name: Collect Docker logs
+        if: always()
+        run: |
+          docker logs clusterscope \
+            > frontend-docker.log 2>&1 || true
+
+      # --------------------------------------------------------
+      # Always upload artifacts
+      # --------------------------------------------------------
+
+      - name: Upload smoke test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-smoke-test-${{ github.run_id }}
+          path: |
+            frontend-smoke-test.log
+            frontend-docker.log
+          retention-days: 14
+
+      - name: Cleanup container
+        if: always()
+        run: |
+          docker rm -f clusterscope || true
+
+
+  # ============================================================
+  # Publish Development Image
+  # ============================================================
+
+  frontend-publish-dev:
+    name: Publish Frontend Dev Image
+    runs-on: ubuntu-latest
+
+    needs: frontend-smoke-test
+
+    if: |
+      (github.event_name == 'push' &&
+       startsWith(github.ref, 'refs/heads/feat/')) ||
+      (github.event_name == 'workflow_dispatch' &&
+       inputs.push == true)
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-image-${{ github.run_id }}
+          path: /tmp/frontend-image
+
+      - name: Load Docker image
+        run: |
+          docker load \
+            --input /tmp/frontend-image/clusterscope-frontend.tar
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Push development image
+        run: |
+          docker tag \
+            clusterscope-frontend:latest \
+            ${{ env.IMAGE_NAME }}:dev
+
+          docker tag \
+            clusterscope-frontend:latest \
+            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+
+          docker push \
+            ${{ env.IMAGE_NAME }}:dev
+
+          docker push \
+            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+
+
+  # ============================================================
+  # Publish Production Image
+  # ============================================================
+
+  frontend-publish-latest:
+    name: Publish Frontend Latest Image
+    runs-on: ubuntu-latest
+
+    needs: frontend-smoke-test
+
+    if: |
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-image-${{ github.run_id }}
+          path: /tmp/frontend-image
+
+      - name: Load Docker image
+        run: |
+          docker load \
+            --input /tmp/frontend-image/clusterscope-frontend.tar
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Push production image
+        run: |
+          docker tag \
+            clusterscope-frontend:latest \
+            ${{ env.IMAGE_NAME }}:latest
+
+          docker tag \
+            clusterscope-frontend:latest \
+            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+
+          docker push \
+            ${{ env.IMAGE_NAME }}:latest
+
+          docker push \
+            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}

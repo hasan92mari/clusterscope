@@ -1,0 +1,414 @@
+name: Integration Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_environment:
+        description: "Default image environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - test
+        default: dev
+
+      backend_tag:
+        description: "Optional backend image tag override"
+        required: false
+        type: string
+
+      frontend_tag:
+        description: "Optional frontend image tag override"
+        required: false
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/clusterscope-backend
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/clusterscope-frontend
+
+jobs:
+
+  integration-test:
+    name: Full Stack Integration Test
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+
+      # --------------------------------------------------
+      # 1. Checkout
+      # --------------------------------------------------
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      # --------------------------------------------------
+      # 2. Resolve image tags
+      # --------------------------------------------------
+
+      - name: Resolve image tags
+        run: |
+          BACKEND_TAG="${{ inputs.backend_tag }}"
+          FRONTEND_TAG="${{ inputs.frontend_tag }}"
+
+          if [ -z "$BACKEND_TAG" ]; then
+            BACKEND_TAG="${{ inputs.image_environment }}"
+          fi
+
+          if [ -z "$FRONTEND_TAG" ]; then
+            FRONTEND_TAG="${{ inputs.image_environment }}"
+          fi
+
+          echo "Backend tag: $BACKEND_TAG"
+          echo "Frontend tag: $FRONTEND_TAG"
+
+          echo "BACKEND_TAG=$BACKEND_TAG" >> "$GITHUB_ENV"
+          echo "FRONTEND_TAG=$FRONTEND_TAG" >> "$GITHUB_ENV"
+
+
+      # --------------------------------------------------
+      # 3. Login to GHCR
+      # --------------------------------------------------
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+
+      # --------------------------------------------------
+      # 4. Pull application images
+      # --------------------------------------------------
+
+      - name: Pull Backend image
+        run: |
+          docker pull \
+            "${BACKEND_IMAGE}:${BACKEND_TAG}"
+
+      - name: Pull Frontend image
+        run: |
+          docker pull \
+            "${FRONTEND_IMAGE}:${FRONTEND_TAG}"
+
+      - name: Pull Redis image
+        run: |
+          docker pull redis:7-alpine
+
+      - name: Pull PostgreSQL image
+        run: |
+          docker pull postgres:16-alpine
+
+
+      # --------------------------------------------------
+      # 5. Start Redis
+      # --------------------------------------------------
+
+      - name: Start Redis
+        run: |
+          docker run -d \
+            --name clusterscope-redis \
+            -p 6379:6379 \
+            redis:7-alpine
+
+
+      # --------------------------------------------------
+      # 6. Start PostgreSQL
+      # --------------------------------------------------
+
+      - name: Start PostgreSQL
+        run: |
+          docker run -d \
+            --name clusterscope-postgres \
+            -e POSTGRES_USER=clusterscope \
+            -e POSTGRES_PASSWORD=clusterscope \
+            -e POSTGRES_DB=clusterscope \
+            -p 5432:5432 \
+            postgres:16-alpine
+
+
+      # --------------------------------------------------
+      # 7. Wait for PostgreSQL
+      # --------------------------------------------------
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in {1..30}; do
+            if docker exec clusterscope-postgres \
+              pg_isready \
+              -U clusterscope \
+              -d clusterscope; then
+              echo "PostgreSQL is ready."
+              exit 0
+            fi
+
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+
+          echo "PostgreSQL did not become ready."
+          exit 1
+
+
+      # --------------------------------------------------
+      # 8. Create application network
+      # --------------------------------------------------
+
+      - name: Create Docker network
+        run: |
+          docker network create clusterscope-network
+
+
+      # --------------------------------------------------
+      # 9. Connect infrastructure containers
+      # --------------------------------------------------
+
+      - name: Connect Redis to network
+        run: |
+          docker network connect \
+            clusterscope-network \
+            clusterscope-redis
+
+      - name: Connect PostgreSQL to network
+        run: |
+          docker network connect \
+            clusterscope-network \
+            clusterscope-postgres
+
+
+      # --------------------------------------------------
+      # 10. Start Backend
+      # --------------------------------------------------
+
+      - name: Start Backend
+        run: |
+          docker run -d \
+            --name clusterscope-backend \
+            --network clusterscope-network \
+            -p 8000:8000 \
+            -e POSTGRES_USER=clusterscope \
+            -e POSTGRES_PASSWORD=clusterscope \
+            -e POSTGRES_DB=clusterscope \
+            -e POSTGRES_HOST=clusterscope-postgres \
+            -e POSTGRES_PORT=5432 \
+            "${BACKEND_IMAGE}:${BACKEND_TAG}"
+
+
+      # --------------------------------------------------
+      # 11. Wait for Backend
+      # --------------------------------------------------
+
+      - name: Wait for Backend
+        run: |
+          for i in {1..30}; do
+            if curl --fail --silent \
+              http://localhost:8000/healthz; then
+
+              echo
+              echo "Backend is ready."
+              exit 0
+            fi
+
+            echo "Waiting for Backend..."
+            sleep 2
+          done
+
+          echo "Backend did not become ready."
+          exit 1
+
+
+      # --------------------------------------------------
+      # 12. Start Frontend
+      # --------------------------------------------------
+
+      - name: Start Frontend
+        run: |
+          docker run -d \
+            --name clusterscope-frontend \
+            --network clusterscope-network \
+            -p 8080:8080 \
+            -e REDIS_HOST=clusterscope-redis \
+            -e REDIS_PORT=6379 \
+            -e BACKEND_URL=http://clusterscope-backend:8000 \
+            "${FRONTEND_IMAGE}:${FRONTEND_TAG}"
+
+
+      # --------------------------------------------------
+      # 13. Wait for Frontend
+      # --------------------------------------------------
+
+      - name: Wait for Frontend
+        run: |
+          for i in {1..30}; do
+            if curl --fail --silent \
+              http://localhost:8080/healthz; then
+
+              echo
+              echo "Frontend is ready."
+              exit 0
+            fi
+
+            echo "Waiting for Frontend..."
+            sleep 2
+          done
+
+          echo "Frontend did not become ready."
+          exit 1
+
+
+      # --------------------------------------------------
+      # 14. Integration tests
+      # --------------------------------------------------
+
+      - name: Test Redis
+        run: |
+          docker exec clusterscope-redis \
+            redis-cli ping
+
+
+      - name: Test PostgreSQL
+        run: |
+          docker exec clusterscope-postgres \
+            pg_isready \
+            -U clusterscope \
+            -d clusterscope
+
+
+      - name: Test Backend health
+        run: |
+          curl --fail \
+            http://localhost:8000/healthz
+
+
+      - name: Test Backend readiness
+        run: |
+          curl --fail \
+            http://localhost:8000/readyz
+
+
+      - name: Test Frontend health
+        run: |
+          curl --fail \
+            http://localhost:8080/healthz
+
+
+      - name: Test Frontend readiness
+        run: |
+          curl --fail \
+            http://localhost:8080/readyz
+
+
+      - name: Test Frontend to Redis
+        run: |
+          curl --fail \
+            -X POST \
+            http://localhost:8080/api/session/integration-test \
+            -H "Content-Type: application/json" \
+            -d '{"value":"integration-test"}'
+
+          curl --fail \
+            http://localhost:8080/api/session/integration-test
+
+
+      - name: Test Frontend to Backend
+        run: |
+          curl --fail \
+            http://localhost:8080/api/backend/status
+
+
+      - name: Test Frontend to Backend to PostgreSQL
+        run: |
+          curl --fail \
+            -X POST \
+            http://localhost:8080/api/backend/magic/integration-test \
+            -H "Content-Type: application/json" \
+            -d '{"magicValue":"42"}'
+
+          curl --fail \
+            http://localhost:8080/api/backend/magic/integration-test
+
+
+      # --------------------------------------------------
+      # 15. Collect diagnostic information
+      # --------------------------------------------------
+
+      - name: Collect test results
+        if: always()
+        run: |
+          {
+            echo "======================================"
+            echo "ClusterScope Integration Test"
+            echo "======================================"
+            echo
+            echo "Environment: ${{ inputs.image_environment }}"
+            echo "Backend tag: $BACKEND_TAG"
+            echo "Frontend tag: $FRONTEND_TAG"
+            echo
+            echo "Containers:"
+            docker ps -a
+            echo
+            echo "Network:"
+            docker network inspect clusterscope-network
+          } > integration-test-result.log
+
+
+      - name: Collect container logs
+        if: always()
+        run: |
+          {
+            echo "======================================"
+            echo "Frontend logs"
+            echo "======================================"
+            docker logs clusterscope-frontend 2>&1 || true
+
+            echo
+            echo "======================================"
+            echo "Backend logs"
+            echo "======================================"
+            docker logs clusterscope-backend 2>&1 || true
+
+            echo
+            echo "======================================"
+            echo "Redis logs"
+            echo "======================================"
+            docker logs clusterscope-redis 2>&1 || true
+
+            echo
+            echo "======================================"
+            echo "PostgreSQL logs"
+            echo "======================================"
+            docker logs clusterscope-postgres 2>&1 || true
+          } > integration-test-logs.log
+
+
+      - name: Upload integration test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-${{ github.run_id }}
+          path: |
+            integration-test-result.log
+            integration-test-logs.log
+          retention-days: 14
+
+
+      # --------------------------------------------------
+      # 16. Cleanup
+      # --------------------------------------------------
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker rm -f \
+            clusterscope-frontend \
+            clusterscope-backend \
+            clusterscope-postgres \
+            clusterscope-redis || true
+
+          docker network rm clusterscope-network || true
