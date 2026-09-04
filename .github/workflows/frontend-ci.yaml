@@ -22,15 +22,11 @@ on:
     paths:
       - 'frontend/**'
 
-
-# ============================================================
-# Workflow Environment
-# ============================================================
-
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/clusterscope-frontend
   IMAGE_TAG: "v${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}"
+  CANDIDATE_TAG: "candidate-${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}"
 
 
 jobs:
@@ -70,39 +66,79 @@ jobs:
       - name: Build
         run: npm run build
 
+
   # ============================================================
-  # Frontend Image Build
+  # Frontend Image
+  #
+  # Build → Push Candidate → Smoke Test → Promote
   # ============================================================
 
-  frontend-build:
-    name: Frontend Docker Build
+  frontend-image:
+    name: Frontend Image
     runs-on: ubuntu-latest
 
     needs: frontend-validation
 
+    if: |
+      github.event_name == 'push' ||
+      (
+        github.event_name == 'workflow_dispatch' &&
+        inputs.push == true
+      )
+
     permissions:
       contents: read
+      packages: write
 
     steps:
+
+      # ----------------------------------------------------------
+      # Checkout
+      # ----------------------------------------------------------
+
       - name: Checkout repository
         uses: actions/checkout@v4
+
+
+      # ----------------------------------------------------------
+      # QEMU
+      # ----------------------------------------------------------
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
+
+      # ----------------------------------------------------------
+      # Docker Buildx
+      # ----------------------------------------------------------
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # --------------------------------------------------------
-      # Build The Image
-      #
-      # No push.
-      #
-      # The result is stored as an OCI image archive and passed
-      # to the next job as a GitHub Actions artifact.
-      # --------------------------------------------------------
 
-      - name: Build multi-platform Docker image
+      # ----------------------------------------------------------
+      # Login to GHCR
+      # ----------------------------------------------------------
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+
+      # ==========================================================
+      # Build + Push Candidate
+      #
+      # The image is built ONCE.
+      #
+      # Platforms:
+      #   linux/amd64
+      #   linux/arm64
+      # ==========================================================
+
+      - name: Build and push candidate image
         uses: docker/build-push-action@v7
         with:
           context: ./frontend
@@ -110,7 +146,10 @@ jobs:
 
           platforms: linux/amd64,linux/arm64
 
-          outputs: type=oci,dest=/tmp/clusterscope-frontend.tar
+          push: true
+
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
 
           cache-from: |
             type=gha,scope=clusterscope-frontend
@@ -118,57 +157,44 @@ jobs:
           cache-to: |
             type=gha,mode=max,scope=clusterscope-frontend
 
-      - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-image-${{ github.run_id }}
-          path: /tmp/clusterscope-frontend.tar
-          retention-days: 1
 
+      # ==========================================================
+      # Pull Candidate
+      #
+      # GitHub runner is amd64.
+      # Docker automatically pulls the amd64 variant.
+      # ==========================================================
 
-  # ============================================================
-  # Frontend Smoke Test
-  # ============================================================
-
-  frontend-smoke-test:
-    name: Frontend Smoke Test
-    runs-on: ubuntu-latest
-
-    needs: frontend-build
-
-    steps:
-      - name: Download Docker image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-image-${{ github.run_id }}
-          path: /tmp/frontend-image
-
-      - name: Load Docker image
+      - name: Pull candidate image
         run: |
-          docker load \
-            --input /tmp/frontend-image/clusterscope-frontend.tar
+          docker pull \
+            ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
 
-      - name: Smoke test
+
+      # ==========================================================
+      # Smoke Test
+      # ==========================================================
+
+      - name: Smoke test candidate image
         run: |
           docker run -d \
             --name clusterscope \
             -p 8080:8080 \
-            clusterscope-frontend:latest
+            ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+
+          echo "Waiting for application..."
 
           sleep 3
 
           curl --fail \
-            --retry 3 \
+            --retry 5 \
             --retry-delay 1 \
             http://localhost:8080/healthz
 
-      # --------------------------------------------------------
-      # Always collect the test result
-      #
-      # IMPORTANT:
-      # This does NOT hide a failure.
-      # The Smoke Test step above can still fail the job.
-      # --------------------------------------------------------
+
+      # ==========================================================
+      # Collect Smoke Test Result
+      # ==========================================================
 
       - name: Collect smoke test result
         if: always()
@@ -190,9 +216,10 @@ jobs:
               2>/dev/null || true
           } > frontend-smoke-test.log
 
-      # --------------------------------------------------------
-      # Always collect Docker logs
-      # --------------------------------------------------------
+
+      # ==========================================================
+      # Collect Docker Logs
+      # ==========================================================
 
       - name: Collect Docker logs
         if: always()
@@ -200,9 +227,10 @@ jobs:
           docker logs clusterscope \
             > frontend-docker.log 2>&1 || true
 
-      # --------------------------------------------------------
-      # Always upload artifacts
-      # --------------------------------------------------------
+
+      # ==========================================================
+      # Upload Smoke Test Artifacts
+      # ==========================================================
 
       - name: Upload smoke test artifacts
         if: always()
@@ -214,117 +242,62 @@ jobs:
             frontend-docker.log
           retention-days: 14
 
+
+      # ==========================================================
+      # Promote Candidate → Dev
+      #
+      # No rebuild.
+      # Only creates another tag pointing to the same
+      # multi-platform image.
+      # ==========================================================
+
+      - name: Promote candidate to dev
+        if: |
+          success() &&
+          (
+            (
+              github.event_name == 'push' &&
+              startsWith(github.ref, 'refs/heads/feat/')
+            ) ||
+            (
+              github.event_name == 'workflow_dispatch' &&
+              inputs.push == true
+            )
+          )
+        run: |
+          docker buildx imagetools create \
+            --tag ${{ env.IMAGE_NAME }}:dev \
+            ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+
+          docker buildx imagetools create \
+            --tag ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
+            ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+
+
+      # ==========================================================
+      # Promote Candidate → Latest
+      # ==========================================================
+
+      - name: Promote candidate to latest
+        if: |
+          success() &&
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main'
+        run: |
+          docker buildx imagetools create \
+            --tag ${{ env.IMAGE_NAME }}:latest \
+            ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+
+          docker buildx imagetools create \
+            --tag ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
+            ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+
+
+      # ==========================================================
+      # Cleanup
+      # ==========================================================
+
       - name: Cleanup container
         if: always()
         run: |
           docker rm -f clusterscope || true
-
-
-  # ============================================================
-  # Publish Development Image
-  # ============================================================
-
-  frontend-publish-dev:
-    name: Publish Frontend Dev Image
-    runs-on: ubuntu-latest
-
-    needs: frontend-smoke-test
-
-    if: |
-      (github.event_name == 'push' &&
-       startsWith(github.ref, 'refs/heads/feat/')) ||
-      (github.event_name == 'workflow_dispatch' &&
-       inputs.push == true)
-
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Download Docker image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-image-${{ github.run_id }}
-          path: /tmp/frontend-image
-
-      - name: Load Docker image
-        run: |
-          docker load \
-            --input /tmp/frontend-image/clusterscope-frontend.tar
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
-
-      - name: Push development image
-        run: |
-          docker tag \
-            clusterscope-frontend:latest \
-            ${{ env.IMAGE_NAME }}:dev
-
-          docker tag \
-            clusterscope-frontend:latest \
-            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-
-          docker push \
-            ${{ env.IMAGE_NAME }}:dev
-
-          docker push \
-            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-
-
-  # ============================================================
-  # Publish Production Image
-  # ============================================================
-
-  frontend-publish-latest:
-    name: Publish Frontend Latest Image
-    runs-on: ubuntu-latest
-
-    needs: frontend-smoke-test
-
-    if: |
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main'
-
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Download Docker image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-image-${{ github.run_id }}
-          path: /tmp/frontend-image
-
-      - name: Load Docker image
-        run: |
-          docker load \
-            --input /tmp/frontend-image/clusterscope-frontend.tar
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
-
-      - name: Push production image
-        run: |
-          docker tag \
-            clusterscope-frontend:latest \
-            ${{ env.IMAGE_NAME }}:latest
-
-          docker tag \
-            clusterscope-frontend:latest \
-            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-
-          docker push \
-            ${{ env.IMAGE_NAME }}:latest
-
-          docker push \
-            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
