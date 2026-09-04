@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       image_environment:
-        description: "Default image environment"
+        description: "Default image tag"
         required: true
         type: choice
         options:
           - dev
-          - test
+          - latest
         default: dev
 
       backend_tag:
@@ -97,6 +97,11 @@ jobs:
           docker pull \
             "${FRONTEND_IMAGE}:${FRONTEND_TAG}"
 
+
+      # --------------------------------------------------
+      # 5. Pull infrastructure images
+      # --------------------------------------------------
+
       - name: Pull Redis image
         run: |
           docker pull redis:7-alpine
@@ -107,34 +112,43 @@ jobs:
 
 
       # --------------------------------------------------
-      # 5. Start Redis
+      # 6. Create Docker network
+      # --------------------------------------------------
+
+      - name: Create Docker network
+        run: |
+          docker network create clusterscope-network
+
+
+      # --------------------------------------------------
+      # 7. Start Redis
       # --------------------------------------------------
 
       - name: Start Redis
         run: |
           docker run -d \
             --name clusterscope-redis \
-            -p 6379:6379 \
+            --network clusterscope-network \
             redis:7-alpine
 
 
       # --------------------------------------------------
-      # 6. Start PostgreSQL
+      # 8. Start PostgreSQL
       # --------------------------------------------------
 
       - name: Start PostgreSQL
         run: |
           docker run -d \
             --name clusterscope-postgres \
+            --network clusterscope-network \
             -e POSTGRES_USER=clusterscope \
             -e POSTGRES_PASSWORD=clusterscope \
             -e POSTGRES_DB=clusterscope \
-            -p 5432:5432 \
             postgres:16-alpine
 
 
       # --------------------------------------------------
-      # 7. Wait for PostgreSQL
+      # 9. Wait for PostgreSQL
       # --------------------------------------------------
 
       - name: Wait for PostgreSQL
@@ -144,6 +158,7 @@ jobs:
               pg_isready \
               -U clusterscope \
               -d clusterscope; then
+
               echo "PostgreSQL is ready."
               exit 0
             fi
@@ -157,33 +172,25 @@ jobs:
 
 
       # --------------------------------------------------
-      # 8. Create application network
+      # 10. Test Redis
       # --------------------------------------------------
 
-      - name: Create Docker network
+      - name: Test Redis
         run: |
-          docker network create clusterscope-network
+          REDIS_RESULT=$(docker exec clusterscope-redis redis-cli ping)
+
+          echo "Redis response: $REDIS_RESULT"
+
+          if [ "$REDIS_RESULT" != "PONG" ]; then
+            echo "Redis health check failed."
+            exit 1
+          fi
+
+          echo "Redis is healthy."
 
 
       # --------------------------------------------------
-      # 9. Connect infrastructure containers
-      # --------------------------------------------------
-
-      - name: Connect Redis to network
-        run: |
-          docker network connect \
-            clusterscope-network \
-            clusterscope-redis
-
-      - name: Connect PostgreSQL to network
-        run: |
-          docker network connect \
-            clusterscope-network \
-            clusterscope-postgres
-
-
-      # --------------------------------------------------
-      # 10. Start Backend
+      # 11. Start Backend
       # --------------------------------------------------
 
       - name: Start Backend
@@ -191,7 +198,6 @@ jobs:
           docker run -d \
             --name clusterscope-backend \
             --network clusterscope-network \
-            -p 8000:8000 \
             -e POSTGRES_USER=clusterscope \
             -e POSTGRES_PASSWORD=clusterscope \
             -e POSTGRES_DB=clusterscope \
@@ -201,7 +207,7 @@ jobs:
 
 
       # --------------------------------------------------
-      # 11. Wait for Backend
+      # 12. Wait for Backend
       # --------------------------------------------------
 
       - name: Wait for Backend
@@ -220,11 +226,14 @@ jobs:
           done
 
           echo "Backend did not become ready."
+
+          docker logs clusterscope-backend || true
+
           exit 1
 
 
       # --------------------------------------------------
-      # 12. Start Frontend
+      # 13. Start Frontend
       # --------------------------------------------------
 
       - name: Start Frontend
@@ -240,7 +249,7 @@ jobs:
 
 
       # --------------------------------------------------
-      # 13. Wait for Frontend
+      # 14. Wait for Frontend
       # --------------------------------------------------
 
       - name: Wait for Frontend
@@ -259,86 +268,163 @@ jobs:
           done
 
           echo "Frontend did not become ready."
+
+          docker logs clusterscope-frontend || true
+
           exit 1
 
 
       # --------------------------------------------------
-      # 14. Integration tests
+      # 15. Integration tests
       # --------------------------------------------------
-
-      - name: Test Redis
-        run: |
-          docker exec clusterscope-redis \
-            redis-cli ping
-
-
-      - name: Test PostgreSQL
-        run: |
-          docker exec clusterscope-postgres \
-            pg_isready \
-            -U clusterscope \
-            -d clusterscope
-
 
       - name: Test Backend health
         run: |
-          curl --fail \
+          curl --fail-with-body \
             http://localhost:8000/healthz
+
+          echo
+          echo "Backend health check passed."
 
 
       - name: Test Backend readiness
         run: |
-          curl --fail \
+          curl --fail-with-body \
             http://localhost:8000/readyz
+
+          echo
+          echo "Backend readiness check passed."
 
 
       - name: Test Frontend health
         run: |
-          curl --fail \
+          curl --fail-with-body \
             http://localhost:8080/healthz
+
+          echo
+          echo "Frontend health check passed."
 
 
       - name: Test Frontend readiness
         run: |
-          curl --fail \
+          curl --fail-with-body \
             http://localhost:8080/readyz
 
+          echo
+          echo "Frontend readiness check passed."
+
+
+      # --------------------------------------------------
+      # 15.1 Frontend → Redis
+      # --------------------------------------------------
 
       - name: Test Frontend to Redis
         run: |
-          curl --fail \
+          echo "Saving value through Frontend → Redis..."
+
+          POST_RESPONSE=$(curl --fail-with-body \
             -X POST \
             http://localhost:8080/api/session/integration-test \
             -H "Content-Type: application/json" \
-            -d '{"value":"integration-test"}'
+            -d '{"magicNumber":"42"}')
 
-          curl --fail \
-            http://localhost:8080/api/session/integration-test
+          echo "POST response:"
+          echo "$POST_RESPONSE"
 
+          echo "$POST_RESPONSE" | jq -e '
+            .connected == true and
+            .saved == true and
+            .magicNumber == "42"
+          ' > /dev/null
+
+          echo "Redis save through Frontend passed."
+
+
+          echo
+          echo "Reading value through Frontend → Redis..."
+
+          GET_RESPONSE=$(curl --fail-with-body \
+            http://localhost:8080/api/session/integration-test)
+
+          echo "GET response:"
+          echo "$GET_RESPONSE"
+
+          echo "$GET_RESPONSE" | jq -e '
+            .connected == true and
+            .found == true and
+            .magicNumber == "42"
+          ' > /dev/null
+
+          echo "Redis read through Frontend passed."
+
+
+      # --------------------------------------------------
+      # 15.2 Frontend → Backend
+      # --------------------------------------------------
 
       - name: Test Frontend to Backend
         run: |
-          curl --fail \
-            http://localhost:8080/api/backend/status
+          RESPONSE=$(curl --fail-with-body \
+            http://localhost:8080/api/backend/status)
 
+          echo "Backend response through Frontend:"
+          echo "$RESPONSE"
+
+          echo "$RESPONSE" | jq -e '
+            .connected == true and
+            .data != null
+          ' > /dev/null
+
+          echo "Frontend → Backend integration passed."
+
+
+      # --------------------------------------------------
+      # 15.3 Frontend → Backend → PostgreSQL
+      # --------------------------------------------------
 
       - name: Test Frontend to Backend to PostgreSQL
         run: |
-          curl --fail \
+          echo "Saving value through Frontend → Backend → PostgreSQL..."
+
+          POST_RESPONSE=$(curl --fail-with-body \
             -X POST \
             http://localhost:8080/api/backend/magic/integration-test \
             -H "Content-Type: application/json" \
-            -d '{"magicValue":"42"}'
+            -d '{"magicValue":"42"}')
 
-          curl --fail \
-            http://localhost:8080/api/backend/magic/integration-test
+          echo "POST response:"
+          echo "$POST_RESPONSE"
+
+          echo "$POST_RESPONSE" | jq -e '
+            .name == "integration-test" and
+            .magicValue == "42"
+          ' > /dev/null
+
+          echo "PostgreSQL save through Backend passed."
+
+
+          echo
+          echo "Reading value through Frontend → Backend → PostgreSQL..."
+
+          GET_RESPONSE=$(curl --fail-with-body \
+            http://localhost:8080/api/backend/magic/integration-test)
+
+          echo "GET response:"
+          echo "$GET_RESPONSE"
+
+          echo "$GET_RESPONSE" | jq -e '
+            .name == "integration-test" and
+            .magicValue == "42"
+          ' > /dev/null
+
+          echo "PostgreSQL read through Backend passed."
 
 
       # --------------------------------------------------
-      # 15. Collect diagnostic information
+      # 16. Collect diagnostic information
       # --------------------------------------------------
 
-      - name: Collect test results
+      - name: Collect integration test result
         if: always()
         run: |
           {
@@ -399,7 +485,7 @@ jobs:
 
 
       # --------------------------------------------------
-      # 16. Cleanup
+      # 17. Cleanup
       # --------------------------------------------------
 
       - name: Cleanup
