@@ -64,13 +64,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Test
+        run: npm run test:run
+
       - name: Build
         run: npm run build
-
-      # Add tests later
-      # - name: Test
-      #   run: npm test
-
 
   # ============================================================
   # Frontend Image Build
