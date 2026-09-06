@@ -67,7 +67,6 @@ jobs:
         run: python -m pytest
 
 
-
   # ============================================================
   # Backend Static Security Analysis
   # ============================================================
@@ -95,17 +94,243 @@ jobs:
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3
 
+
   # ============================================================
-  # Backend Image
+  # Backend Docker Build - AMD64
   #
-  # Build amd64 → Smoke Test → Build Multi-Arch → Push Candidate
+  # Build only.
+  # The image is loaded into Docker and exported as a
+  # Docker archive for the smoke-test job.
   # ============================================================
 
-  backend-image:
-    name: Backend Image
+  backend-build-amd64:
+    name: Backend Build AMD64
     runs-on: ubuntu-latest
 
     needs: backend-sast
+
+    permissions:
+      contents: read
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      # ----------------------------------------------------------
+      # Docker Buildx
+      # ----------------------------------------------------------
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+
+      # ----------------------------------------------------------
+      # Build AMD64 image
+      # ----------------------------------------------------------
+
+      - name: Build AMD64 image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+
+          platforms: linux/amd64
+
+          load: true
+
+          tags: |
+            clusterscope-backend:smoke
+
+          cache-from: |
+            type=gha,scope=clusterscope-backend
+
+          cache-to: |
+            type=gha,mode=max,scope=clusterscope-backend
+
+
+      # ----------------------------------------------------------
+      # Export Docker image
+      #
+      # docker save creates a Docker-compatible archive.
+      # This can safely be loaded with docker load in another job.
+      # ----------------------------------------------------------
+
+      - name: Save Docker image
+        run: |
+          docker save \
+            clusterscope-backend:smoke \
+            -o /tmp/clusterscope-backend.tar
+
+
+      # ----------------------------------------------------------
+      # Upload Docker image artifact
+      # ----------------------------------------------------------
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-image-${{ github.run_id }}
+          path: /tmp/clusterscope-backend.tar
+          retention-days: 1
+
+
+  # ============================================================
+  # Backend Smoke Test
+  #
+  # Download → Load → Run → Test
+  # ============================================================
+
+  backend-smoke-test:
+    name: Backend Smoke Test
+    runs-on: ubuntu-latest
+
+    needs: backend-build-amd64
+
+    permissions:
+      contents: read
+
+    steps:
+
+      # ----------------------------------------------------------
+      # Download Docker image
+      # ----------------------------------------------------------
+
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-image-${{ github.run_id }}
+          path: /tmp/backend-image
+
+
+      # ----------------------------------------------------------
+      # Load Docker image
+      # ----------------------------------------------------------
+
+      - name: Load Docker image
+        run: |
+          docker load \
+            --input /tmp/backend-image/clusterscope-backend.tar
+
+
+      # ----------------------------------------------------------
+      # Run container
+      # ----------------------------------------------------------
+
+      - name: Start backend container
+        run: |
+          docker run -d \
+            --name clusterscope-backend \
+            -p 8000:8000 \
+            clusterscope-backend:smoke
+
+
+      # ----------------------------------------------------------
+      # Smoke test
+      # ----------------------------------------------------------
+
+      - name: Smoke test backend
+        run: |
+          echo "Waiting for application..."
+
+          sleep 3
+
+          curl --fail \
+            --retry 5 \
+            --retry-delay 1 \
+            http://localhost:8000/healthz
+
+
+      # ----------------------------------------------------------
+      # Collect smoke test result
+      # ----------------------------------------------------------
+
+      - name: Collect smoke test result
+        if: always()
+        run: |
+          {
+            echo "Backend Smoke Test"
+            echo "=================="
+            echo ""
+            echo "Health endpoint:"
+            curl -sS http://localhost:8000/healthz || true
+            echo ""
+            echo ""
+            echo "Container status:"
+            docker ps -a --filter name=clusterscope-backend
+            echo ""
+            echo "Container inspect:"
+            docker inspect clusterscope-backend \
+              --format '{{.State.Status}} - ExitCode={{.State.ExitCode}}' \
+              2>/dev/null || true
+          } > backend-smoke-test.log
+
+
+      # ----------------------------------------------------------
+      # Collect Docker logs
+      # ----------------------------------------------------------
+
+      - name: Collect Docker logs
+        if: always()
+        run: |
+          docker logs clusterscope-backend \
+            > backend-docker.log 2>&1 || true
+
+
+      # ----------------------------------------------------------
+      # Upload smoke-test artifacts
+      # ----------------------------------------------------------
+
+      - name: Upload smoke test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-smoke-test-${{ github.run_id }}
+          path: |
+            backend-smoke-test.log
+            backend-docker.log
+          retention-days: 14
+
+
+      # ----------------------------------------------------------
+      # Cleanup
+      # ----------------------------------------------------------
+
+      - name: Cleanup container
+        if: always()
+        run: |
+          docker rm -f clusterscope-backend || true
+
+
+  # ============================================================
+  # Backend Publish
+  #
+  # Smoke test passed
+  #       ↓
+  # QEMU
+  #       ↓
+  # Multi-Arch Build
+  #       ↓
+  # Push Candidate
+  #
+  # Platforms:
+  #   linux/amd64
+  #   linux/arm64
+  # ============================================================
+
+  backend-publish:
+    name: Backend Publish
+    runs-on: ubuntu-latest
+
+    needs: backend-smoke-test
+
+    if: |
+      github.event_name == 'push' ||
+      (
+        github.event_name == 'workflow_dispatch' &&
+        inputs.push == true
+      )
 
     permissions:
       contents: read
@@ -127,6 +352,16 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+
+      # ----------------------------------------------------------
+      # Set up QEMU
+      #
+      # Required for ARM64 build.
+      # ----------------------------------------------------------
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
 
       # ----------------------------------------------------------
@@ -153,145 +388,11 @@ jobs:
           echo "CANDIDATE_TAG=candidate-${GITHUB_RUN_NUMBER}-${SHORT_SHA}" >> "$GITHUB_ENV"
 
 
-      # ==========================================================
-      # Build amd64 Image for Smoke Test
-      #
-      # Single platform
-      # No push
-      # load: true
-      #
-      # The image is loaded into the local Docker Engine.
-      # ==========================================================
-
-      - name: Build image for smoke test
-        uses: docker/build-push-action@v7
-        with:
-          context: ./backend
-          file: ./backend/Dockerfile
-
-          platforms: linux/amd64
-
-          load: true
-
-          tags: |
-            clusterscope-backend:smoke
-
-          cache-from: |
-            type=gha,scope=clusterscope-backend
-
-          cache-to: |
-            type=gha,mode=max,scope=clusterscope-backend
-
-
-      # ==========================================================
-      # Smoke Test
-      # ==========================================================
-
-      - name: Smoke test backend image
-        run: |
-          docker run -d \
-            --name clusterscope-backend \
-            -p 8000:8000 \
-            clusterscope-backend:smoke
-
-          echo "Waiting for application..."
-
-          sleep 3
-
-          curl --fail \
-            --retry 5 \
-            --retry-delay 1 \
-            http://localhost:8000/healthz
-
-
-      # ==========================================================
-      # Collect Smoke Test Result
-      # ==========================================================
-
-      - name: Collect smoke test result
-        if: always()
-        run: |
-          {
-            echo "Backend Smoke Test"
-            echo "=================="
-            echo ""
-            echo "Health endpoint:"
-            curl -sS http://localhost:8000/healthz || true
-            echo ""
-            echo ""
-            echo "Container status:"
-            docker ps -a --filter name=clusterscope-backend
-            echo ""
-            echo "Container inspect:"
-            docker inspect clusterscope-backend \
-              --format '{{.State.Status}} - ExitCode={{.State.ExitCode}}' \
-              2>/dev/null || true
-          } > backend-smoke-test.log
-
-
-      # ==========================================================
-      # Collect Docker Logs
-      # ==========================================================
-
-      - name: Collect Docker logs
-        if: always()
-        run: |
-          docker logs clusterscope-backend \
-            > backend-docker.log 2>&1 || true
-
-
-      # ==========================================================
-      # Upload Smoke Test Artifacts
-      # ==========================================================
-
-      - name: Upload smoke test artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-smoke-test-${{ github.run_id }}
-          path: |
-            backend-smoke-test.log
-            backend-docker.log
-          retention-days: 14
-
-
-      # ==========================================================
-      # Cleanup Smoke Test Container
-      # ==========================================================
-
-      - name: Cleanup container
-        if: always()
-        run: |
-          docker rm -f clusterscope-backend || true
-
-
-      # ==========================================================
-      # Set up QEMU
-      #
-      # Needed only now because the next build targets ARM64.
-      # ==========================================================
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-
-      # ==========================================================
+      # ----------------------------------------------------------
       # Build + Push Multi-Platform Candidate
-      #
-      # Only reached if the smoke test succeeded.
-      #
-      # Platforms:
-      #   linux/amd64
-      #   linux/arm64
-      # ==========================================================
+      # ----------------------------------------------------------
 
       - name: Build and push candidate image
-        if: |
-          github.event_name == 'push' ||
-          (
-            github.event_name == 'workflow_dispatch' &&
-            inputs.push == true
-          )
         uses: docker/build-push-action@v7
         with:
           context: ./backend
@@ -311,66 +412,92 @@ jobs:
             type=gha,mode=max,scope=clusterscope-backend
 
 
+  # ============================================================
+  # Backend Promote
+  #
+  # Candidate → Environment Tag
+  #
+  # No rebuild.
+  # ============================================================
+
+  backend-promote:
+    name: Backend Promote
+    runs-on: ubuntu-latest
+
+    needs: backend-publish
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+
+      # ----------------------------------------------------------
+      # Login to GHCR
+      # ----------------------------------------------------------
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+
+      # ----------------------------------------------------------
+      # Set image tags
+      # ----------------------------------------------------------
+
+      - name: Set image tags
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+
+          echo "IMAGE_TAG=v${GITHUB_RUN_NUMBER}-${SHORT_SHA}" >> "$GITHUB_ENV"
+          echo "CANDIDATE_TAG=candidate-${GITHUB_RUN_NUMBER}-${SHORT_SHA}" >> "$GITHUB_ENV"
+
+
       # ==========================================================
-      # Promote Candidate → Dev
+      # Promote → Dev
       #
       # feat/* → dev
       # workflow_dispatch + push=true → dev
-      #
-      # No rebuild.
       # ==========================================================
 
       - name: Promote candidate to dev
         if: |
-          success() &&
           (
-            (
-              github.event_name == 'push' &&
-              startsWith(github.ref, 'refs/heads/feat/')
-            ) ||
-            (
-              github.event_name == 'workflow_dispatch' &&
-              inputs.push == true
-            )
+            github.event_name == 'push' &&
+            startsWith(github.ref, 'refs/heads/feat/')
+          ) ||
+          (
+            github.event_name == 'workflow_dispatch' &&
+            inputs.push == true
           )
         run: |
           docker buildx imagetools create \
-            --tag ${{ env.IMAGE_NAME }}:dev \
-            ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+            --tag "${{ env.IMAGE_NAME }}:dev" \
+            "${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
 
           docker buildx imagetools create \
-            --tag ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
-            ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+            --tag "${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" \
+            "${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
 
 
       # ==========================================================
-      # Promote Candidate → Latest
+      # Promote → Latest
       #
       # main → latest
-      #
-      # No rebuild.
       # ==========================================================
 
       - name: Promote candidate to latest
         if: |
-          success() &&
           github.event_name == 'push' &&
           github.ref == 'refs/heads/main'
         run: |
           docker buildx imagetools create \
-            --tag ${{ env.IMAGE_NAME }}:latest \
-            ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+            --tag "${{ env.IMAGE_NAME }}:latest" \
+            "${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
 
           docker buildx imagetools create \
-            --tag ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
-            ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
-
-
-      # ==========================================================
-      # Cleanup
-      # ==========================================================
-
-      - name: Final cleanup
-        if: always()
-        run: |
-          docker rm -f clusterscope-backend || true
+            --tag "${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" \
+            "${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"

@@ -22,6 +22,11 @@ on:
     paths:
       - 'frontend/**'
 
+
+# ============================================================
+# Workflow Environment
+# ============================================================
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/clusterscope-frontend
@@ -67,16 +72,273 @@ jobs:
 
 
   # ============================================================
-  # Frontend Image
-  #
-  # Build amd64 → Smoke Test → Build Multi-Arch → Push Candidate
+  # Frontend Static Security Analysis
   # ============================================================
 
-  frontend-image:
-    name: Frontend Image
+  frontend-sast:
+    name: Frontend SAST
     runs-on: ubuntu-latest
 
     needs: frontend-validation
+
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+
+
+  # ============================================================
+  # Frontend Docker Build - AMD64
+  #
+  # Build only.
+  # The image is loaded into Docker and exported as a
+  # Docker archive for the smoke-test job.
+  # ============================================================
+
+  frontend-build-amd64:
+    name: Frontend Build AMD64
+    runs-on: ubuntu-latest
+
+    needs: frontend-sast
+
+    permissions:
+      contents: read
+
+    steps:
+
+      # ----------------------------------------------------------
+      # Checkout
+      # ----------------------------------------------------------
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      # ----------------------------------------------------------
+      # Docker Buildx
+      # ----------------------------------------------------------
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+
+      # ----------------------------------------------------------
+      # Build AMD64 image
+      # ----------------------------------------------------------
+
+      - name: Build AMD64 image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+
+          platforms: linux/amd64
+
+          load: true
+
+          tags: |
+            clusterscope-frontend:smoke
+
+          cache-from: |
+            type=gha,scope=clusterscope-frontend
+
+          cache-to: |
+            type=gha,mode=max,scope=clusterscope-frontend
+
+
+      # ----------------------------------------------------------
+      # Export Docker image
+      #
+      # docker save creates a Docker-compatible archive.
+      # This can safely be loaded with docker load in another job.
+      # ----------------------------------------------------------
+
+      - name: Save Docker image
+        run: |
+          docker save \
+            clusterscope-frontend:smoke \
+            -o /tmp/clusterscope-frontend.tar
+
+
+      # ----------------------------------------------------------
+      # Upload Docker image artifact
+      # ----------------------------------------------------------
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-image-${{ github.run_id }}
+          path: /tmp/clusterscope-frontend.tar
+          retention-days: 1
+
+
+  # ============================================================
+  # Frontend Smoke Test
+  #
+  # Download → Load → Run → Test
+  # ============================================================
+
+  frontend-smoke-test:
+    name: Frontend Smoke Test
+    runs-on: ubuntu-latest
+
+    needs: frontend-build-amd64
+
+    permissions:
+      contents: read
+
+    steps:
+
+      # ----------------------------------------------------------
+      # Download Docker image
+      # ----------------------------------------------------------
+
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-image-${{ github.run_id }}
+          path: /tmp/frontend-image
+
+
+      # ----------------------------------------------------------
+      # Load Docker image
+      # ----------------------------------------------------------
+
+      - name: Load Docker image
+        run: |
+          docker load \
+            --input /tmp/frontend-image/clusterscope-frontend.tar
+
+
+      # ----------------------------------------------------------
+      # Start container
+      # ----------------------------------------------------------
+
+      - name: Start frontend container
+        run: |
+          docker run -d \
+            --name clusterscope \
+            -p 8080:8080 \
+            clusterscope-frontend:smoke
+
+
+      # ----------------------------------------------------------
+      # Smoke test
+      # ----------------------------------------------------------
+
+      - name: Smoke test frontend
+        run: |
+          echo "Waiting for application..."
+
+          sleep 3
+
+          curl --fail \
+            --retry 5 \
+            --retry-delay 1 \
+            http://localhost:8080/healthz
+
+
+      # ----------------------------------------------------------
+      # Collect smoke test result
+      # ----------------------------------------------------------
+
+      - name: Collect smoke test result
+        if: always()
+        run: |
+          {
+            echo "Frontend Smoke Test"
+            echo "==================="
+            echo ""
+            echo "Health endpoint:"
+            curl -sS http://localhost:8080/healthz || true
+            echo ""
+            echo ""
+            echo "Container status:"
+            docker ps -a --filter name=clusterscope
+            echo ""
+            echo "Container inspect:"
+            docker inspect clusterscope \
+              --format '{{.State.Status}} - ExitCode={{.State.ExitCode}}' \
+              2>/dev/null || true
+          } > frontend-smoke-test.log
+
+
+      # ----------------------------------------------------------
+      # Collect Docker logs
+      # ----------------------------------------------------------
+
+      - name: Collect Docker logs
+        if: always()
+        run: |
+          docker logs clusterscope \
+            > frontend-docker.log 2>&1 || true
+
+
+      # ----------------------------------------------------------
+      # Upload smoke-test artifacts
+      # ----------------------------------------------------------
+
+      - name: Upload smoke test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-smoke-test-${{ github.run_id }}
+          path: |
+            frontend-smoke-test.log
+            frontend-docker.log
+          retention-days: 14
+
+
+      # ----------------------------------------------------------
+      # Cleanup
+      # ----------------------------------------------------------
+
+      - name: Cleanup container
+        if: always()
+        run: |
+          docker rm -f clusterscope || true
+
+
+  # ============================================================
+  # Frontend Publish
+  #
+  # Smoke test passed
+  #       ↓
+  # QEMU
+  #       ↓
+  # Multi-Arch Build
+  #       ↓
+  # Push Candidate
+  #
+  # Platforms:
+  #   linux/amd64
+  #   linux/arm64
+  # ============================================================
+
+  frontend-publish:
+    name: Frontend Publish
+    runs-on: ubuntu-latest
+
+    needs: frontend-smoke-test
+
+    if: |
+      github.event_name == 'push' ||
+      (
+        github.event_name == 'workflow_dispatch' &&
+        inputs.push == true
+      )
 
     permissions:
       contents: read
@@ -98,6 +360,16 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+
+      # ----------------------------------------------------------
+      # Set up QEMU
+      #
+      # Required for ARM64 build.
+      # ----------------------------------------------------------
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
 
       # ----------------------------------------------------------
@@ -124,148 +396,11 @@ jobs:
           echo "CANDIDATE_TAG=candidate-${GITHUB_RUN_NUMBER}-${SHORT_SHA}" >> "$GITHUB_ENV"
 
 
-      # ==========================================================
-      # Build amd64 Image for Smoke Test
-      #
-      # Single platform
-      # No push
-      # load: true
-      #
-      # The image is loaded into the local Docker Engine so it
-      # can be started and tested immediately.
-      # ==========================================================
-
-      - name: Build image for smoke test
-        uses: docker/build-push-action@v7
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
-
-          platforms: linux/amd64
-
-          load: true
-
-          tags: |
-            clusterscope-frontend:smoke
-
-          cache-from: |
-            type=gha,scope=clusterscope-frontend
-
-          cache-to: |
-            type=gha,mode=max,scope=clusterscope-frontend
-
-
-      # ==========================================================
-      # Smoke Test
-      # ==========================================================
-
-      - name: Smoke test candidate image
-        run: |
-          docker run -d \
-            --name clusterscope \
-            -p 8080:8080 \
-            clusterscope-frontend:smoke
-
-          echo "Waiting for application..."
-
-          sleep 3
-
-          curl --fail \
-            --retry 5 \
-            --retry-delay 1 \
-            http://localhost:8080/healthz
-
-
-      # ==========================================================
-      # Collect Smoke Test Result
-      # ==========================================================
-
-      - name: Collect smoke test result
-        if: always()
-        run: |
-          {
-            echo "Frontend Smoke Test"
-            echo "==================="
-            echo ""
-            echo "Health endpoint:"
-            curl -sS http://localhost:8080/healthz || true
-            echo ""
-            echo ""
-            echo "Container status:"
-            docker ps -a --filter name=clusterscope
-            echo ""
-            echo "Container inspect:"
-            docker inspect clusterscope \
-              --format '{{.State.Status}} - ExitCode={{.State.ExitCode}}' \
-              2>/dev/null || true
-          } > frontend-smoke-test.log
-
-
-      # ==========================================================
-      # Collect Docker Logs
-      # ==========================================================
-
-      - name: Collect Docker logs
-        if: always()
-        run: |
-          docker logs clusterscope \
-            > frontend-docker.log 2>&1 || true
-
-
-      # ==========================================================
-      # Upload Smoke Test Artifacts
-      # ==========================================================
-
-      - name: Upload smoke test artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-smoke-test-${{ github.run_id }}
-          path: |
-            frontend-smoke-test.log
-            frontend-docker.log
-          retention-days: 14
-
-
-      # ==========================================================
-      # Cleanup Smoke Test Container
-      # ==========================================================
-
-      - name: Cleanup container
-        if: always()
-        run: |
-          docker rm -f clusterscope || true
-
-
-      # ==========================================================
-      # QEMU
-      #
-      # Needed only now because the next build targets ARM64.
-      # ==========================================================
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-
-      # ==========================================================
+      # ----------------------------------------------------------
       # Build + Push Multi-Platform Candidate
-      #
-      # This step is reached only if the smoke test succeeded.
-      #
-      # Platforms:
-      #   linux/amd64
-      #   linux/arm64
-      #
-      # This is the image that will later be promoted.
-      # ==========================================================
+      # ----------------------------------------------------------
 
       - name: Build and push candidate image
-        if: |
-          github.event_name == 'push' ||
-          (
-            github.event_name == 'workflow_dispatch' &&
-            inputs.push == true
-          )
         uses: docker/build-push-action@v7
         with:
           context: ./frontend
@@ -285,57 +420,92 @@ jobs:
             type=gha,mode=max,scope=clusterscope-frontend
 
 
+  # ============================================================
+  # Frontend Promote
+  #
+  # Candidate → Environment Tag
+  #
+  # No rebuild.
+  # ============================================================
+
+  frontend-promote:
+    name: Frontend Promote
+    runs-on: ubuntu-latest
+
+    needs: frontend-publish
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+
+      # ----------------------------------------------------------
+      # Login to GHCR
+      # ----------------------------------------------------------
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+
+      # ----------------------------------------------------------
+      # Set image tags
+      # ----------------------------------------------------------
+
+      - name: Set image tags
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+
+          echo "IMAGE_TAG=v${GITHUB_RUN_NUMBER}-${SHORT_SHA}" >> "$GITHUB_ENV"
+          echo "CANDIDATE_TAG=candidate-${GITHUB_RUN_NUMBER}-${SHORT_SHA}" >> "$GITHUB_ENV"
+
+
       # ==========================================================
-      # Promote Candidate → Dev
+      # Promote → Dev
       #
       # feat/* → dev
       # workflow_dispatch + push=true → dev
-      #
-      # No rebuild.
-      # The multi-platform candidate manifest is reused.
       # ==========================================================
 
       - name: Promote candidate to dev
         if: |
-          success() &&
           (
-            (
-              github.event_name == 'push' &&
-              startsWith(github.ref, 'refs/heads/feat/')
-            ) ||
-            (
-              github.event_name == 'workflow_dispatch' &&
-              inputs.push == true
-            )
+            github.event_name == 'push' &&
+            startsWith(github.ref, 'refs/heads/feat/')
+          ) ||
+          (
+            github.event_name == 'workflow_dispatch' &&
+            inputs.push == true
           )
         run: |
           docker buildx imagetools create \
-            --tag ${{ env.IMAGE_NAME }}:dev \
-            ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+            --tag "${{ env.IMAGE_NAME }}:dev" \
+            "${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
 
           docker buildx imagetools create \
-            --tag ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
-            ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+            --tag "${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" \
+            "${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
 
 
       # ==========================================================
-      # Promote Candidate → Latest
+      # Promote → Latest
       #
       # main → latest
-      #
-      # No rebuild.
       # ==========================================================
 
       - name: Promote candidate to latest
         if: |
-          success() &&
           github.event_name == 'push' &&
           github.ref == 'refs/heads/main'
         run: |
           docker buildx imagetools create \
-            --tag ${{ env.IMAGE_NAME }}:latest \
-            ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+            --tag "${{ env.IMAGE_NAME }}:latest" \
+            "${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
 
           docker buildx imagetools create \
-            --tag ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
-            ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+            --tag "${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" \
+            "${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
