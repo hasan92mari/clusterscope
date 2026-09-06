@@ -32,6 +32,9 @@ ENV PYTHONUNBUFFERED=1
 
 COPY --from=builder /install /usr/local
 
+RUN rm -rf /usr/local/lib/python3.13/site-packages/pip \
+           /usr/local/lib/python3.13/site-packages/pip-*.dist-info
+
 COPY app ./app
 
 RUN useradd \

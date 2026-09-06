@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import './App.css';
+import { formatUptime } from './utils/formatUptime';
 
 interface ClusterConfig {
   podIp: string;
@@ -165,33 +166,6 @@ function App() {
     };
   }, [clusterConfig.podStartTime]);
 
-  /**
-   * Format uptime as HH:MM:SS.
-   */
-  const formatUptime = (
-    seconds: number | null
-  ) => {
-    if (seconds === null) {
-      return 'Unavailable';
-    }
-
-    const hours = Math.floor(
-      seconds / 3600
-    );
-
-    const minutes = Math.floor(
-      (seconds % 3600) / 60
-    );
-
-    const remainingSeconds =
-      seconds % 60;
-
-    return [
-      hours.toString().padStart(2, '0'),
-      minutes.toString().padStart(2, '0'),
-      remainingSeconds.toString().padStart(2, '0'),
-    ].join(':');
-  };
 
   /**
    * Check Backend connectivity.

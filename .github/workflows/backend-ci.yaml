@@ -1,4 +1,4 @@
-name: Backend CI/CD
+name: Backend CI
 
 on:
   workflow_dispatch:
@@ -30,7 +30,6 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/clusterscope-backend
-  IMAGE_TAG: "v${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}"
 
 
 jobs:
@@ -39,8 +38,8 @@ jobs:
   # Backend Validation
   # ============================================================
 
-  backend-validation:
-    name: Backend Validation
+  code-validation:
+    name: Code Validation
     runs-on: ubuntu-latest
 
     defaults:
@@ -48,6 +47,7 @@ jobs:
         working-directory: backend
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -63,57 +63,183 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
 
+      - name: Audit Python dependencies
+        run: |
+          python -m pip install pip-audit
+          pip-audit -r requirements.txt
+
       - name: Run tests
         run: python -m pytest
 
-
   # ============================================================
-  # Backend Image Build
+  # Backend Static Security Analysis
   # ============================================================
 
-  backend-build:
-    name: Backend Docker Build
+  code-sast:
+    name: Code SAST
     runs-on: ubuntu-latest
 
-    needs: backend-validation
+
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+
+
+  # ============================================================
+  # Trivy Configuration Scan
+  #
+  # Scans Dockerfile and other configuration files before
+  # building the container image.
+  #
+  # This detects configuration / security misconfigurations.
+  # ============================================================
+
+  trivy-image-config-scan:
+    name: Trivy Image Config Scan
+    runs-on: ubuntu-latest
+
 
     permissions:
       contents: read
 
     steps:
+
+      # ----------------------------------------------------------
+      # Checkout
+      # ----------------------------------------------------------
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+
+      # ----------------------------------------------------------
+      # Run Trivy configuration scan
+      # ----------------------------------------------------------
+
+      - name: Scan backend configuration with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: ./backend
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          format: table
+          output: trivy-config-report.txt
+
+
+      # ----------------------------------------------------------
+      # Upload Trivy configuration report
+      #
+      # Upload even if the scan fails.
+      # ----------------------------------------------------------
+
+      - name: Upload Trivy config report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-trivy-config-${{ github.run_id }}
+          path: trivy-config-report.txt
+          retention-days: 14
+
+
+  # ============================================================
+  # Image Docker Build - AMD64
+  #
+  # Waits for:
+  #
+  #   Image SAST
+  #          +
+  #   Trivy Config Scan
+  #
+  # Build only.
+  # The image is loaded into Docker and exported as a
+  # Docker archive for the following security and smoke-test jobs.
+  # ============================================================
+
+  image-build-amd64:
+    name: Image Build AMD64
+    runs-on: ubuntu-latest
+
+    needs:
+      - code-validation
+      - code-sast
+      - trivy-image-config-scan
+
+    permissions:
+      contents: read
+
+    steps:
+
+      # ----------------------------------------------------------
+      # Checkout
+      # ----------------------------------------------------------
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      # ----------------------------------------------------------
+      # Docker Buildx
+      # ----------------------------------------------------------
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # --------------------------------------------------------
-      # Build The Image
-      #
-      # No push.
-      #
-      # The result is stored as an OCI image archive and passed
-      # to the next job as a GitHub Actions artifact.
-      # --------------------------------------------------------
 
-      - name: Build multi-platform Docker image
+      # ----------------------------------------------------------
+      # Build AMD64 image
+      # ----------------------------------------------------------
+
+      - name: Build AMD64 image
         uses: docker/build-push-action@v7
         with:
           context: ./backend
           file: ./backend/Dockerfile
 
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
 
-          outputs: type=oci,dest=/tmp/clusterscope-backend.tar
+          load: true
+
+          tags: |
+            clusterscope-backend:smoke
 
           cache-from: |
             type=gha,scope=clusterscope-backend
 
           cache-to: |
             type=gha,mode=max,scope=clusterscope-backend
+
+
+      # ----------------------------------------------------------
+      # Export Docker image
+      #
+      # docker save creates a Docker-compatible archive.
+      # This can safely be loaded with docker load in another job.
+      # ----------------------------------------------------------
+
+      - name: Save Docker image
+        run: |
+          docker save \
+            clusterscope-backend:smoke \
+            -o /tmp/clusterscope-backend.tar
+
+
+      # ----------------------------------------------------------
+      # Upload Docker image artifact
+      # ----------------------------------------------------------
 
       - name: Upload Docker image artifact
         uses: actions/upload-artifact@v4
@@ -122,50 +248,83 @@ jobs:
           path: /tmp/clusterscope-backend.tar
           retention-days: 1
 
-
   # ============================================================
   # Backend Smoke Test
+  #
+  # Download → Load → Run → Test
+  #
+  # This runs only after:
+  #
+  #   Build
+  #       ↓
+  #   Trivy Image Scan
+  #
+  # has passed.
   # ============================================================
 
-  backend-smoke-test:
-    name: Backend Smoke Test
+  image-smoke-test:
+    name: Image Smoke Test
     runs-on: ubuntu-latest
 
-    needs: backend-build
+    needs: image-build-amd64
+
+    permissions:
+      contents: read
 
     steps:
-      - name: Download Docker image artifact
+
+      # ----------------------------------------------------------
+      # Download Docker image
+      # ----------------------------------------------------------
+
+      - name: Download Docker image
         uses: actions/download-artifact@v4
         with:
           name: backend-image-${{ github.run_id }}
           path: /tmp/backend-image
+
+
+      # ----------------------------------------------------------
+      # Load Docker image
+      # ----------------------------------------------------------
 
       - name: Load Docker image
         run: |
           docker load \
             --input /tmp/backend-image/clusterscope-backend.tar
 
-      - name: Smoke test
+
+      # ----------------------------------------------------------
+      # Start backend container
+      # ----------------------------------------------------------
+
+      - name: Start backend container
         run: |
           docker run -d \
             --name clusterscope-backend \
             -p 8000:8000 \
-            clusterscope-backend:latest
+            clusterscope-backend:smoke
+
+
+      # ----------------------------------------------------------
+      # Smoke test
+      # ----------------------------------------------------------
+
+      - name: Smoke test backend
+        run: |
+          echo "Waiting for application..."
 
           sleep 3
 
           curl --fail \
-            --retry 3 \
+            --retry 5 \
             --retry-delay 1 \
             http://localhost:8000/healthz
 
-      # --------------------------------------------------------
-      # Always collect the test result
-      #
-      # IMPORTANT:
-      # This does NOT hide a failure.
-      # The Smoke Test step above can still fail the job.
-      # --------------------------------------------------------
+
+      # ----------------------------------------------------------
+      # Collect smoke test result
+      # ----------------------------------------------------------
 
       - name: Collect smoke test result
         if: always()
@@ -187,9 +346,10 @@ jobs:
               2>/dev/null || true
           } > backend-smoke-test.log
 
-      # --------------------------------------------------------
-      # Always collect Docker logs
-      # --------------------------------------------------------
+
+      # ----------------------------------------------------------
+      # Collect Docker logs
+      # ----------------------------------------------------------
 
       - name: Collect Docker logs
         if: always()
@@ -197,9 +357,10 @@ jobs:
           docker logs clusterscope-backend \
             > backend-docker.log 2>&1 || true
 
-      # --------------------------------------------------------
-      # Always upload artifacts
-      # --------------------------------------------------------
+
+      # ----------------------------------------------------------
+      # Upload smoke-test artifacts
+      # ----------------------------------------------------------
 
       - name: Upload smoke test artifacts
         if: always()
@@ -211,43 +372,316 @@ jobs:
             backend-docker.log
           retention-days: 14
 
+
+      # ----------------------------------------------------------
+      # Cleanup
+      # ----------------------------------------------------------
+
       - name: Cleanup container
         if: always()
         run: |
           docker rm -f clusterscope-backend || true
 
-
   # ============================================================
-  # Publish Development Image
+  # Backend Container Image Security Scan
+  #
+  # Download → Load → Trivy Scan
+  #
+  # Scans the exact AMD64 image that will later be used
+  # by the smoke-test job.
+  #
+  # The scan fails if HIGH or CRITICAL vulnerabilities
+  # are detected.
   # ============================================================
 
-  backend-publish-dev:
-    name: Publish Backend Dev Image
+  image-trivy-vulnerability-scan:
+    name: Image Trivy Vulnerability Scan
     runs-on: ubuntu-latest
 
-    needs: backend-smoke-test
+    needs: image-build-amd64
+
+    permissions:
+      contents: read
+
+    steps:
+
+      # ----------------------------------------------------------
+      # Download Docker image artifact
+      # ----------------------------------------------------------
+
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-image-${{ github.run_id }}
+          path: /tmp/backend-image
+
+
+      # ----------------------------------------------------------
+      # Load Docker image
+      # ----------------------------------------------------------
+
+      - name: Load Docker image
+        run: |
+          docker load \
+            --input /tmp/backend-image/clusterscope-backend.tar
+
+
+      # ----------------------------------------------------------
+      # Run Trivy vulnerability scan
+      # ----------------------------------------------------------
+
+      - name: Scan Docker image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: clusterscope-backend:smoke
+          format: table
+          output: trivy-image-report.txt
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+
+      # ----------------------------------------------------------
+      # Upload Trivy vulnerability report
+      #
+      # Upload even if the scan fails.
+      # ----------------------------------------------------------
+
+      - name: Upload Trivy image report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-trivy-image-${{ github.run_id }}
+          path: trivy-image-report.txt
+          retention-days: 14
+
+
+  # ============================================================
+  # Backend DAST - OWASP ZAP
+  #
+  # Download → Load → Run → ZAP Scan
+  #
+  # The application is started from the exact AMD64 image
+  # that was built, scanned and smoke-tested.
+  # ============================================================
+
+  image-dast:
+    name: OWASP ZAP DAST
+    runs-on: ubuntu-latest
+
+    needs:
+      - image-smoke-test
+      - image-trivy-vulnerability-scan
+
+    permissions:
+      contents: read
+
+    steps:
+
+      # ----------------------------------------------------------
+      # Download Docker image artifact
+      # ----------------------------------------------------------
+
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-image-${{ github.run_id }}
+          path: /tmp/backend-image
+
+
+      # ----------------------------------------------------------
+      # Load Docker image
+      # ----------------------------------------------------------
+
+      - name: Load Docker image
+        run: |
+          docker load \
+            --input /tmp/backend-image/clusterscope-backend.tar
+
+
+      # ----------------------------------------------------------
+      # Start backend
+      # ----------------------------------------------------------
+
+      - name: Start backend container
+        run: |
+          docker run -d \
+            --name clusterscope-backend \
+            -p 8000:8000 \
+            clusterscope-backend:smoke
+
+
+      # ----------------------------------------------------------
+      # Wait for backend
+      # ----------------------------------------------------------
+
+      - name: Wait for backend
+        run: |
+          echo "Waiting for backend..."
+
+          for i in {1..15}; do
+
+            if curl --fail --silent http://localhost:8000/healthz; then
+              echo ""
+              echo "Backend is ready."
+              exit 0
+            fi
+
+            echo "Backend not ready yet..."
+
+            docker ps -a --filter name=clusterscope-backend
+
+            sleep 2
+          done
+
+          echo ""
+          echo "Backend failed to become ready."
+          echo ""
+          echo "Container status:"
+          docker inspect clusterscope-backend \
+            --format '{{.State.Status}} - ExitCode={{.State.ExitCode}} - Error={{.State.Error}}'
+
+          echo ""
+          echo "Container logs:"
+          docker logs clusterscope-backend || true
+
+          exit 1
+
+
+      # ----------------------------------------------------------
+      # OWASP ZAP Baseline Scan
+      #
+      # Baseline scan performs passive security testing.
+      # It does not actively attack the application.
+      # ----------------------------------------------------------
+
+      - name: Run OWASP ZAP baseline scan
+        run: |
+          docker run --rm \
+            --network host \
+            -v "$(pwd):/zap/wrk/:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t http://127.0.0.1:8000 \
+            -r zap-report.html \
+            -J zap-report.json \
+            -I
+
+
+      # ----------------------------------------------------------
+      # Upload ZAP reports
+      # ----------------------------------------------------------
+
+      - name: Upload ZAP reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-zap-${{ github.run_id }}
+          path: |
+            zap-report.html
+            zap-report.json
+          retention-days: 14
+
+
+      # ----------------------------------------------------------
+      # Collect Docker logs
+      # ----------------------------------------------------------
+
+      - name: Collect Docker logs
+        if: always()
+        run: |
+          docker logs clusterscope-backend \
+            > backend-zap-docker.log 2>&1 || true
+
+
+      # ----------------------------------------------------------
+      # Cleanup
+      # ----------------------------------------------------------
+
+      - name: Cleanup container
+        if: always()
+        run: |
+          docker rm -f clusterscope-backend || true
+
+  # ============================================================
+  # Backend Image Push
+  #
+  # Environment:
+  #
+  #   main    → production → latest
+  #   feat/** → development → dev
+  #
+  # Multi-Architecture:
+  #
+  #   linux/amd64
+  #   linux/arm64
+  #
+  # Tags:
+  #
+  #   Moving environment tag:
+  #     dev
+  #     latest
+  #
+  #   Fixed human-readable tag:
+  #     dev-142-a1b2c3d
+  #     latest-143-f8e91ab
+  #
+  # The image digest identifies the exact immutable image.
+  # ============================================================
+
+  image-push:
+    name: Image Push
+    runs-on: ubuntu-latest
+
+    needs:
+      - image-trivy-vulnerability-scan
+      - image-dast
 
     if: |
-      (github.event_name == 'push' &&
-       startsWith(github.ref, 'refs/heads/feat/')) ||
-      (github.event_name == 'workflow_dispatch' &&
-       inputs.push == true)
+      github.event_name == 'push' ||
+      (
+        github.event_name == 'workflow_dispatch' &&
+        inputs.push == true
+      )
+
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
 
     permissions:
       contents: read
       packages: write
 
     steps:
-      - name: Download Docker image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: backend-image-${{ github.run_id }}
-          path: /tmp/backend-image
 
-      - name: Load Docker image
-        run: |
-          docker load \
-            --input /tmp/backend-image/clusterscope-backend.tar
+      # ----------------------------------------------------------
+      # Checkout
+      # ----------------------------------------------------------
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      # ----------------------------------------------------------
+      # Set up QEMU
+      #
+      # Required for ARM64 builds.
+      # ----------------------------------------------------------
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+
+      # ----------------------------------------------------------
+      # Set up Docker Buildx
+      # ----------------------------------------------------------
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+
+      # ----------------------------------------------------------
+      # Login to GHCR
+      # ----------------------------------------------------------
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -256,72 +690,78 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      - name: Push development image
+
+      # ----------------------------------------------------------
+      # Set image version
+      #
+      # Example:
+      #
+      #   142-a1b2c3d
+      #
+      # The environment tag is added during the Docker build:
+      #
+      #   dev-142-a1b2c3d
+      #   latest-142-a1b2c3d
+      # ----------------------------------------------------------
+
+      - name: Set image version
         run: |
-          docker tag \
-            clusterscope-backend:latest \
-            ${{ env.IMAGE_NAME }}:dev
-
-          docker tag \
-            clusterscope-backend:latest \
-            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-
-          docker push \
-            ${{ env.IMAGE_NAME }}:dev
-
-          docker push \
-            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "IMAGE_VERSION=${GITHUB_RUN_NUMBER}-${SHORT_SHA}" >> "$GITHUB_ENV"
 
 
-  # ============================================================
-  # Publish Production Image
-  # ============================================================
+      # ----------------------------------------------------------
+      # Build and push multi-architecture image
+      #
+      # Moving tag:
+      #
+      #   dev
+      #   latest
+      #
+      # Fixed tag:
+      #
+      #   dev-142-a1b2c3d
+      #   latest-142-a1b2c3d
+      #
+      # Both tags point to the same image digest.
+      # ----------------------------------------------------------
 
-  backend-publish-latest:
-    name: Publish Backend Latest Image
-    runs-on: ubuntu-latest
-
-    needs: backend-smoke-test
-
-    if: |
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main'
-
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Download Docker image artifact
-        uses: actions/download-artifact@v4
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v7
         with:
-          name: backend-image-${{ github.run_id }}
-          path: /tmp/backend-image
+          context: ./backend
+          file: ./backend/Dockerfile
 
-      - name: Load Docker image
+          platforms: linux/amd64,linux/arm64
+
+          push: true
+
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ vars.ENV_IMAGE_TAG }}
+            ${{ env.IMAGE_NAME }}:${{ vars.ENV_IMAGE_TAG }}-${{ env.IMAGE_VERSION }}
+
+          cache-from: |
+            type=gha,scope=clusterscope-backend
+
+          cache-to: |
+            type=gha,mode=max,scope=clusterscope-backend
+
+
+      # ----------------------------------------------------------
+      # Display image digest
+      #
+      # The digest identifies the exact immutable
+      # multi-architecture image.
+      # ----------------------------------------------------------
+
+      - name: Display image digest
         run: |
-          docker load \
-            --input /tmp/backend-image/clusterscope-backend.tar
+          echo "Environment tag:"
+          echo "${{ env.IMAGE_NAME }}:${{ vars.ENV_IMAGE_TAG }}"
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          echo "Version tag:"
+          echo "${{ env.IMAGE_NAME }}:${{ vars.ENV_IMAGE_TAG }}-${{ env.IMAGE_VERSION }}"
 
-      - name: Push production image
-        run: |
-          docker tag \
-            clusterscope-backend:latest \
-            ${{ env.IMAGE_NAME }}:latest
-
-          docker tag \
-            clusterscope-backend:latest \
-            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-
-          docker push \
-            ${{ env.IMAGE_NAME }}:latest
-
-          docker push \
-            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          echo "Digest:"
+          echo "${{ steps.build.outputs.digest }}"
