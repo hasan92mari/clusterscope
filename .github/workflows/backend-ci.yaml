@@ -1,4 +1,4 @@
-name: Backend CI/CD
+name: Backend CI
 
 on:
   workflow_dispatch:
@@ -38,8 +38,8 @@ jobs:
   # Backend Validation
   # ============================================================
 
-  backend-validation:
-    name: Backend Validation
+  image-validation:
+    name: Image Validation
     runs-on: ubuntu-latest
 
     defaults:
@@ -71,11 +71,10 @@ jobs:
   # Backend Static Security Analysis
   # ============================================================
 
-  backend-sast:
-    name: Backend SAST
+  image-sast:
+    name: Image SAST
     runs-on: ubuntu-latest
 
-    needs: backend-validation
 
     permissions:
       security-events: write
@@ -104,11 +103,10 @@ jobs:
   # This detects configuration / security misconfigurations.
   # ============================================================
 
-  backend-trivy-config:
-    name: Backend Trivy Config Scan
+  image-trivy-config:
+    name: Image Trivy Config Scan
     runs-on: ubuntu-latest
 
-    needs: backend-validation
 
     permissions:
       contents: read
@@ -154,11 +152,11 @@ jobs:
 
 
   # ============================================================
-  # Backend Docker Build - AMD64
+  # Image Docker Build - AMD64
   #
   # Waits for:
   #
-  #   Backend SAST
+  #   Image SAST
   #          +
   #   Trivy Config Scan
   #
@@ -167,13 +165,14 @@ jobs:
   # Docker archive for the following security and smoke-test jobs.
   # ============================================================
 
-  backend-build-amd64:
-    name: Backend Build AMD64
+  image-build-amd64:
+    name: Image Build AMD64
     runs-on: ubuntu-latest
 
     needs:
-      - backend-sast
-      - backend-trivy-config
+      - image-validation
+      - image-sast
+      - image-trivy-config
 
     permissions:
       contents: read
@@ -258,11 +257,11 @@ jobs:
   # are detected.
   # ============================================================
 
-  backend-trivy:
-    name: Backend Trivy Image Scan
+  image-trivy:
+    name: Image Trivy Image Scan
     runs-on: ubuntu-latest
 
-    needs: backend-build-amd64
+    needs: image-build-amd64
 
     permissions:
       contents: read
@@ -334,11 +333,11 @@ jobs:
   # has passed.
   # ============================================================
 
-  backend-smoke-test:
-    name: Backend Smoke Test
+  image-smoke-test:
+    name: Image Smoke Test
     runs-on: ubuntu-latest
 
-    needs: backend-trivy
+    needs: image-build-amd64
 
     permissions:
       contents: read
@@ -473,11 +472,13 @@ jobs:
   #   linux/arm64
   # ============================================================
 
-  backend-publish:
-    name: Backend Publish
+  image-publish:
+    name: Image Publish
     runs-on: ubuntu-latest
 
-    needs: backend-smoke-test
+    needs: 
+      - image-smoke-test
+      - image-trivy
 
     if: |
       github.event_name == 'push' ||
@@ -574,11 +575,11 @@ jobs:
   # No rebuild.
   # ============================================================
 
-  backend-promote:
-    name: Backend Promote
+  image-promote:
+    name: Image Promote
     runs-on: ubuntu-latest
 
-    needs: backend-publish
+    needs: image-publish
 
     permissions:
       contents: read
