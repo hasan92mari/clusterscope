@@ -99,7 +99,6 @@ jobs:
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3
 
-
   # ============================================================
   # Trivy Configuration Scan
   # ============================================================
@@ -124,7 +123,6 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: '1'
           format: table
-
 
   # ============================================================
   # Frontend Docker Build - AMD64
@@ -212,10 +210,6 @@ jobs:
           name: frontend-image-${{ github.run_id }}
           path: /tmp/clusterscope-frontend.tar
           retention-days: 1
-
-
-
-
 
   # ============================================================
   # Frontend Smoke Test
@@ -343,7 +337,6 @@ jobs:
         run: |
           docker rm -f clusterscope || true
 
-
   # ============================================================
   # Frontend Container Image Security Scan
   #
@@ -401,11 +394,8 @@ jobs:
           ignore-unfixed: true
           severity: CRITICAL,HIGH
 
-
-
-
   # ============================================================
-  # Backend DAST - OWASP ZAP
+  # Frontend DAST - OWASP ZAP
   #
   # Download → Load → Run → ZAP Scan
   #
@@ -433,8 +423,8 @@ jobs:
       - name: Download Docker image
         uses: actions/download-artifact@v4
         with:
-          name: backend-image-${{ github.run_id }}
-          path: /tmp/backend-image
+          name: frontend-image-${{ github.run_id }}
+          path: /tmp/frontend-image
 
 
       # ----------------------------------------------------------
@@ -444,40 +434,39 @@ jobs:
       - name: Load Docker image
         run: |
           docker load \
-            --input /tmp/backend-image/clusterscope-backend.tar
+            --input /tmp/frontend-image/clusterscope-frontend.tar
 
 
       # ----------------------------------------------------------
-      # Start backend
+      # Start frontend
       # ----------------------------------------------------------
 
-      - name: Start backend container
+      - name: Start frontend container
         run: |
           docker run -d \
-            --name clusterscope-backend \
-            -p 8000:8000 \
-            clusterscope-backend:smoke
+            --name clusterscope \
+            -p 8080:8080 \
+            clusterscope-frontend:smoke
 
 
       # ----------------------------------------------------------
-      # Wait for backend
+      # Wait for frontend
       # ----------------------------------------------------------
 
-      - name: Wait for backend
+      - name: Wait for frontend
         run: |
-          echo "Waiting for backend..."
+          echo "Waiting for frontend..."
 
           curl --fail \
             --retry 10 \
             --retry-delay 2 \
-            http://localhost:8000/healthz
+            http://localhost:8080/healthz
 
 
       # ----------------------------------------------------------
       # OWASP ZAP Baseline Scan
       #
       # Baseline scan performs passive security testing.
-      # It does not actively attack the application.
       # ----------------------------------------------------------
 
       - name: Run OWASP ZAP baseline scan
@@ -487,7 +476,7 @@ jobs:
             -v "$(pwd):/zap/wrk/:rw" \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
-            -t http://127.0.0.1:8000 \
+            -t http://127.0.0.1:8080 \
             -r zap-report.html \
             -J zap-report.json \
             -I
@@ -501,7 +490,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-zap-${{ github.run_id }}
+          name: frontend-zap-${{ github.run_id }}
           path: |
             zap-report.html
             zap-report.json
@@ -515,8 +504,8 @@ jobs:
       - name: Collect Docker logs
         if: always()
         run: |
-          docker logs clusterscope-backend \
-            > backend-zap-docker.log 2>&1 || true
+          docker logs clusterscope \
+            > frontend-zap-docker.log 2>&1 || true
 
 
       # ----------------------------------------------------------
@@ -526,7 +515,7 @@ jobs:
       - name: Cleanup container
         if: always()
         run: |
-          docker rm -f clusterscope-backend || true
+          docker rm -f clusterscope || true
 
   # ============================================================
   # Frontend Image Push

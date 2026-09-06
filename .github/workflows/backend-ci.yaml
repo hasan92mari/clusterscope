@@ -519,10 +519,33 @@ jobs:
         run: |
           echo "Waiting for backend..."
 
-          curl --fail \
-            --retry 10 \
-            --retry-delay 2 \
-            http://localhost:8000/healthz
+          for i in {1..15}; do
+
+            if curl --fail --silent http://localhost:8000/healthz; then
+              echo ""
+              echo "Backend is ready."
+              exit 0
+            fi
+
+            echo "Backend not ready yet..."
+
+            docker ps -a --filter name=clusterscope-backend
+
+            sleep 2
+          done
+
+          echo ""
+          echo "Backend failed to become ready."
+          echo ""
+          echo "Container status:"
+          docker inspect clusterscope-backend \
+            --format '{{.State.Status}} - ExitCode={{.State.ExitCode}} - Error={{.State.Error}}'
+
+          echo ""
+          echo "Container logs:"
+          docker logs clusterscope-backend || true
+
+          exit 1
 
 
       # ----------------------------------------------------------
