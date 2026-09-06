@@ -456,12 +456,30 @@ jobs:
       - name: Wait for frontend
         run: |
           echo "Waiting for frontend..."
+          for i in {1..15}; do
+            if curl --fail --silent http://localhost:8080/healthz; then
+              echo ""
+              echo "Frontend is ready."
+              exit 0
+            fi
+            echo "Frontend not ready yet..."
+            docker ps -a --filter name=clusterscope-frontend
+            sleep 2
+          done
 
-          curl --fail \
-            --retry 10 \
-            --retry-delay 2 \
-            http://localhost:8080/healthz
+          echo ""
+          echo "Frontend failed to become ready."
+          echo ""
 
+          echo "Container status:"
+          docker inspect clusterscope-frontend \
+            --format '{{.State.Status}} - ExitCode={{.State.ExitCode}} - Error={{.State.Error}}'
+
+          echo ""
+          echo "Container logs:"
+          docker logs clusterscope-frontend || true
+
+          exit 1
 
       # ----------------------------------------------------------
       # OWASP ZAP Baseline Scan
