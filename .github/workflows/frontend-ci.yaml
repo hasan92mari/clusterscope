@@ -521,8 +521,11 @@ jobs:
 
       - name: Display image digest
         run: |
-          echo "Image:"
+          echo "Environment tag:"
           echo "${{ env.IMAGE_NAME }}:${{ vars.ENV_IMAGE_TAG }}"
+
+          echo "Version tag:"
+          echo "${{ env.IMAGE_NAME }}:${{ vars.ENV_IMAGE_TAG }}-${{ env.IMAGE_VERSION }}"
 
           echo "Digest:"
           echo "${{ steps.build.outputs.digest }}"
