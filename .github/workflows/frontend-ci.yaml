@@ -100,6 +100,34 @@ jobs:
 
 
   # ============================================================
+  # Trivy Configuration Scan
+  # ============================================================
+
+  frontend-trivy-config:
+    name: Frontend Trivy Config Scan
+    runs-on: ubuntu-latest
+
+    needs: frontend-sast
+
+    permissions:
+      contents: read
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Scan Dockerfile with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: ./frontend
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          format: table
+
+
+  # ============================================================
   # Frontend Docker Build - AMD64
   #
   # Build only.
@@ -111,7 +139,7 @@ jobs:
     name: Frontend Build AMD64
     runs-on: ubuntu-latest
 
-    needs: frontend-sast
+    needs: frontend-trivy-config
 
     permissions:
       contents: read
@@ -185,6 +213,65 @@ jobs:
 
 
   # ============================================================
+  # Frontend Container Image Security Scan
+  #
+  # Download → Load → Trivy Scan
+  #
+  # The same AMD64 image that will be used for the smoke test
+  # is scanned for known vulnerabilities.
+  # ============================================================
+
+  frontend-trivy:
+    name: Frontend Trivy Scan
+    runs-on: ubuntu-latest
+
+    needs: frontend-build-amd64
+
+    permissions:
+      contents: read
+
+    steps:
+
+      # ----------------------------------------------------------
+      # Download Docker image artifact
+      # ----------------------------------------------------------
+
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-image-${{ github.run_id }}
+          path: /tmp/frontend-image
+
+
+      # ----------------------------------------------------------
+      # Load Docker image
+      # ----------------------------------------------------------
+
+      - name: Load Docker image
+        run: |
+          docker load \
+            --input /tmp/frontend-image/clusterscope-frontend.tar
+
+
+      # ----------------------------------------------------------
+      # Run Trivy vulnerability scan
+      #
+      # The scan fails if HIGH or CRITICAL vulnerabilities
+      # are detected.
+      # ----------------------------------------------------------
+
+      - name: Scan Docker image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: clusterscope-frontend:smoke
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+
+
+  # ============================================================
   # Frontend Smoke Test
   #
   # Download → Load → Run → Test
@@ -194,7 +281,7 @@ jobs:
     name: Frontend Smoke Test
     runs-on: ubuntu-latest
 
-    needs: frontend-build-amd64
+    needs: frontend-trivy
 
     permissions:
       contents: read
@@ -314,7 +401,6 @@ jobs:
   # ============================================================
   # Frontend Publish
   #
-  # Smoke test passed
   #       ↓
   # QEMU
   #       ↓
