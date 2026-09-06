@@ -211,7 +211,6 @@ jobs:
           path: /tmp/clusterscope-frontend.tar
           retention-days: 1
 
-
   # ============================================================
   # Frontend Container Image Security Scan
   #
@@ -221,7 +220,7 @@ jobs:
   # is scanned for known vulnerabilities.
   # ============================================================
 
-  frontend-trivy:
+  frontend-trivy-vulnerability:
     name: Frontend Trivy Scan
     runs-on: ubuntu-latest
 
@@ -271,6 +270,7 @@ jobs:
 
 
 
+
   # ============================================================
   # Frontend Smoke Test
   #
@@ -281,7 +281,7 @@ jobs:
     name: Frontend Smoke Test
     runs-on: ubuntu-latest
 
-    needs: frontend-trivy
+    needs: frontend-trivy-vulnerability
 
     permissions:
       contents: read
@@ -396,6 +396,8 @@ jobs:
         if: always()
         run: |
           docker rm -f clusterscope || true
+
+
 
 
   # ============================================================
