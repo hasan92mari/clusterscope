@@ -398,27 +398,27 @@ jobs:
 
 
 
-
   # ============================================================
-  # Frontend Publish
+  # Frontend Image Push
   #
-  #       ↓
-  # QEMU
-  #       ↓
-  # Multi-Arch Build
-  #       ↓
-  # Push Candidate
+  # Environment:
   #
-  # Platforms:
+  #   main    → production → latest
+  #   feat/** → development → dev
+  #
+  # Multi-Architecture:
+  #
   #   linux/amd64
   #   linux/arm64
+  #
+  # The image is pushed directly to the environment tag.
   # ============================================================
 
-  image-publish:
-    name: Image Publish
+  frontend-image-push:
+    name: Frontend Image Push
     runs-on: ubuntu-latest
 
-    needs: 
+    needs:
       - image-smoke-test
       - image-trivy-vulnerability-scan
 
@@ -428,6 +428,9 @@ jobs:
         github.event_name == 'workflow_dispatch' &&
         inputs.push == true
       )
+
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
 
     permissions:
       contents: read
@@ -444,21 +447,21 @@ jobs:
 
 
       # ----------------------------------------------------------
-      # Docker Buildx
-      # ----------------------------------------------------------
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-
-      # ----------------------------------------------------------
       # Set up QEMU
       #
-      # Required for ARM64 build.
+      # Required for ARM64 builds.
       # ----------------------------------------------------------
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
+
+
+      # ----------------------------------------------------------
+      # Set up Docker Buildx
+      # ----------------------------------------------------------
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
 
       # ----------------------------------------------------------
@@ -474,22 +477,22 @@ jobs:
 
 
       # ----------------------------------------------------------
-      # Set image tags
+      # Build and push multi-architecture image
+      #
+      # Environment variable:
+      #
+      #   development → dev
+      #   production  → latest
       # ----------------------------------------------------------
 
-      - name: Set image tags
+      - name: Set image version tags
+
         run: |
           SHORT_SHA="${GITHUB_SHA::7}"
+          echo "IMAGE_VERSION=${GITHUB_RUN_NUMBER}-${SHORT_SHA}" >> "$GITHUB_ENV"
 
-          echo "IMAGE_TAG=v${GITHUB_RUN_NUMBER}-${SHORT_SHA}" >> "$GITHUB_ENV"
-          echo "CANDIDATE_TAG=candidate-${GITHUB_RUN_NUMBER}-${SHORT_SHA}" >> "$GITHUB_ENV"
-
-
-      # ----------------------------------------------------------
-      # Build + Push Multi-Platform Candidate
-      # ----------------------------------------------------------
-
-      - name: Build and push candidate image
+      - name: Build and push image
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: ./frontend
@@ -500,7 +503,8 @@ jobs:
           push: true
 
           tags: |
-            ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+            ${{ env.IMAGE_NAME }}:${{ vars.ENV_IMAGE_TAG }}
+            ${{ env.IMAGE_NAME }}:${{ vars.ENV_IMAGE_TAG }}-${{ env.IMAGE_VERSION }}
 
           cache-from: |
             type=gha,scope=clusterscope-frontend
@@ -509,92 +513,16 @@ jobs:
             type=gha,mode=max,scope=clusterscope-frontend
 
 
-  # ============================================================
-  # Frontend Promote
-  #
-  # Candidate → Environment Tag
-  #
-  # No rebuild.
-  # ============================================================
-
-  image-promote:
-    name: Image Promote
-    runs-on: ubuntu-latest
-
-    needs: image-publish
-
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-
       # ----------------------------------------------------------
-      # Login to GHCR
-      # ----------------------------------------------------------
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
-
-
-      # ----------------------------------------------------------
-      # Set image tags
-      # ----------------------------------------------------------
-
-      - name: Set image tags
-        run: |
-          SHORT_SHA="${GITHUB_SHA::7}"
-
-          echo "IMAGE_TAG=v${GITHUB_RUN_NUMBER}-${SHORT_SHA}" >> "$GITHUB_ENV"
-          echo "CANDIDATE_TAG=candidate-${GITHUB_RUN_NUMBER}-${SHORT_SHA}" >> "$GITHUB_ENV"
-
-
-      # ==========================================================
-      # Promote → Dev
+      # Display image digest
       #
-      # feat/* → dev
-      # workflow_dispatch + push=true → dev
-      # ==========================================================
+      # The digest identifies the exact immutable image.
+      # ----------------------------------------------------------
 
-      - name: Promote candidate to dev
-        if: |
-          (
-            github.event_name == 'push' &&
-            startsWith(github.ref, 'refs/heads/feat/')
-          ) ||
-          (
-            github.event_name == 'workflow_dispatch' &&
-            inputs.push == true
-          )
+      - name: Display image digest
         run: |
-          docker buildx imagetools create \
-            --tag "${{ env.IMAGE_NAME }}:dev" \
-            "${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
+          echo "Image:"
+          echo "${{ env.IMAGE_NAME }}:${{ vars.ENV_IMAGE_TAG }}"
 
-          docker buildx imagetools create \
-            --tag "${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" \
-            "${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
-
-
-      # ==========================================================
-      # Promote → Latest
-      #
-      # main → latest
-      # ==========================================================
-
-      - name: Promote candidate to latest
-        if: |
-          github.event_name == 'push' &&
-          github.ref == 'refs/heads/main'
-        run: |
-          docker buildx imagetools create \
-            --tag "${{ env.IMAGE_NAME }}:latest" \
-            "${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
-
-          docker buildx imagetools create \
-            --tag "${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" \
-            "${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
+          echo "Digest:"
+          echo "${{ steps.build.outputs.digest }}"
