@@ -96,23 +96,93 @@ jobs:
 
 
   # ============================================================
+  # Trivy Configuration Scan
+  #
+  # Scans Dockerfile and other configuration files before
+  # building the container image.
+  #
+  # This detects configuration / security misconfigurations.
+  # ============================================================
+
+  backend-trivy-config:
+    name: Backend Trivy Config Scan
+    runs-on: ubuntu-latest
+
+    needs: backend-validation
+
+    permissions:
+      contents: read
+
+    steps:
+
+      # ----------------------------------------------------------
+      # Checkout
+      # ----------------------------------------------------------
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      # ----------------------------------------------------------
+      # Run Trivy configuration scan
+      # ----------------------------------------------------------
+
+      - name: Scan backend configuration with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: ./backend
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          format: table
+          output: trivy-config-report.txt
+
+
+      # ----------------------------------------------------------
+      # Upload Trivy configuration report
+      #
+      # Upload even if the scan fails.
+      # ----------------------------------------------------------
+
+      - name: Upload Trivy config report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-trivy-config-${{ github.run_id }}
+          path: trivy-config-report.txt
+          retention-days: 14
+
+
+  # ============================================================
   # Backend Docker Build - AMD64
+  #
+  # Waits for:
+  #
+  #   Backend SAST
+  #          +
+  #   Trivy Config Scan
   #
   # Build only.
   # The image is loaded into Docker and exported as a
-  # Docker archive for the smoke-test job.
+  # Docker archive for the following security and smoke-test jobs.
   # ============================================================
 
   backend-build-amd64:
     name: Backend Build AMD64
     runs-on: ubuntu-latest
 
-    needs: backend-sast
+    needs:
+      - backend-sast
+      - backend-trivy-config
 
     permissions:
       contents: read
 
     steps:
+
+      # ----------------------------------------------------------
+      # Checkout
+      # ----------------------------------------------------------
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -177,16 +247,98 @@ jobs:
 
 
   # ============================================================
+  # Backend Container Image Security Scan
+  #
+  # Download → Load → Trivy Scan
+  #
+  # Scans the exact AMD64 image that will later be used
+  # by the smoke-test job.
+  #
+  # The scan fails if HIGH or CRITICAL vulnerabilities
+  # are detected.
+  # ============================================================
+
+  backend-trivy:
+    name: Backend Trivy Image Scan
+    runs-on: ubuntu-latest
+
+    needs: backend-build-amd64
+
+    permissions:
+      contents: read
+
+    steps:
+
+      # ----------------------------------------------------------
+      # Download Docker image artifact
+      # ----------------------------------------------------------
+
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-image-${{ github.run_id }}
+          path: /tmp/backend-image
+
+
+      # ----------------------------------------------------------
+      # Load Docker image
+      # ----------------------------------------------------------
+
+      - name: Load Docker image
+        run: |
+          docker load \
+            --input /tmp/backend-image/clusterscope-backend.tar
+
+
+      # ----------------------------------------------------------
+      # Run Trivy vulnerability scan
+      # ----------------------------------------------------------
+
+      - name: Scan Docker image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: clusterscope-backend:smoke
+          format: table
+          output: trivy-image-report.txt
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+
+      # ----------------------------------------------------------
+      # Upload Trivy vulnerability report
+      #
+      # Upload even if the scan fails.
+      # ----------------------------------------------------------
+
+      - name: Upload Trivy image report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-trivy-image-${{ github.run_id }}
+          path: trivy-image-report.txt
+          retention-days: 14
+
+
+  # ============================================================
   # Backend Smoke Test
   #
   # Download → Load → Run → Test
+  #
+  # This runs only after:
+  #
+  #   Build
+  #       ↓
+  #   Trivy Image Scan
+  #
+  # has passed.
   # ============================================================
 
   backend-smoke-test:
     name: Backend Smoke Test
     runs-on: ubuntu-latest
 
-    needs: backend-build-amd64
+    needs: backend-trivy
 
     permissions:
       contents: read
@@ -215,7 +367,7 @@ jobs:
 
 
       # ----------------------------------------------------------
-      # Run container
+      # Start backend container
       # ----------------------------------------------------------
 
       - name: Start backend container
@@ -306,7 +458,9 @@ jobs:
   # ============================================================
   # Backend Publish
   #
-  # Smoke test passed
+  # Trivy Image Scan
+  #       ↓
+  # Smoke Test
   #       ↓
   # QEMU
   #       ↓
