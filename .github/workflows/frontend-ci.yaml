@@ -213,62 +213,6 @@ jobs:
           path: /tmp/clusterscope-frontend.tar
           retention-days: 1
 
-  # ============================================================
-  # Frontend Container Image Security Scan
-  #
-  # Download → Load → Trivy Scan
-  #
-  # The same AMD64 image that will be used for the smoke test
-  # is scanned for known vulnerabilities.
-  # ============================================================
-
-  image-trivy-vulnerability-scan:
-    name: Image Trivy Vulnerability Scan
-    runs-on: ubuntu-latest
-
-    needs: image-build-amd64
-
-    permissions:
-      contents: read
-
-    steps:
-
-      # ----------------------------------------------------------
-      # Download Docker image artifact
-      # ----------------------------------------------------------
-
-      - name: Download Docker image
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-image-${{ github.run_id }}
-          path: /tmp/frontend-image
-
-
-      # ----------------------------------------------------------
-      # Load Docker image
-      # ----------------------------------------------------------
-
-      - name: Load Docker image
-        run: |
-          docker load \
-            --input /tmp/frontend-image/clusterscope-frontend.tar
-
-
-      # ----------------------------------------------------------
-      # Run Trivy vulnerability scan
-      #
-      # The scan fails if HIGH or CRITICAL vulnerabilities
-      # are detected.
-      # ----------------------------------------------------------
-
-      - name: Scan Docker image with Trivy
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: clusterscope-frontend:smoke
-          format: table
-          exit-code: '1'
-          ignore-unfixed: true
-          severity: CRITICAL,HIGH
 
 
 
@@ -400,6 +344,189 @@ jobs:
           docker rm -f clusterscope || true
 
 
+  # ============================================================
+  # Frontend Container Image Security Scan
+  #
+  # Download → Load → Trivy Scan
+  #
+  # The same AMD64 image that will be used for the smoke test
+  # is scanned for known vulnerabilities.
+  # ============================================================
+
+  image-trivy-vulnerability-scan:
+    name: Image Trivy Vulnerability Scan
+    runs-on: ubuntu-latest
+
+    needs: image-build-amd64
+
+    permissions:
+      contents: read
+
+    steps:
+
+      # ----------------------------------------------------------
+      # Download Docker image artifact
+      # ----------------------------------------------------------
+
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-image-${{ github.run_id }}
+          path: /tmp/frontend-image
+
+
+      # ----------------------------------------------------------
+      # Load Docker image
+      # ----------------------------------------------------------
+
+      - name: Load Docker image
+        run: |
+          docker load \
+            --input /tmp/frontend-image/clusterscope-frontend.tar
+
+
+      # ----------------------------------------------------------
+      # Run Trivy vulnerability scan
+      #
+      # The scan fails if HIGH or CRITICAL vulnerabilities
+      # are detected.
+      # ----------------------------------------------------------
+
+      - name: Scan Docker image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: clusterscope-frontend:smoke
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+
+
+
+  # ============================================================
+  # Backend DAST - OWASP ZAP
+  #
+  # Download → Load → Run → ZAP Scan
+  #
+  # The application is started from the exact AMD64 image
+  # that was built, scanned and smoke-tested.
+  # ============================================================
+
+  image-dast:
+    name: OWASP ZAP DAST
+    runs-on: ubuntu-latest
+
+    needs:
+      - image-smoke-test
+      - image-trivy-vulnerability-scan
+
+    permissions:
+      contents: read
+
+    steps:
+
+      # ----------------------------------------------------------
+      # Download Docker image artifact
+      # ----------------------------------------------------------
+
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-image-${{ github.run_id }}
+          path: /tmp/backend-image
+
+
+      # ----------------------------------------------------------
+      # Load Docker image
+      # ----------------------------------------------------------
+
+      - name: Load Docker image
+        run: |
+          docker load \
+            --input /tmp/backend-image/clusterscope-backend.tar
+
+
+      # ----------------------------------------------------------
+      # Start backend
+      # ----------------------------------------------------------
+
+      - name: Start backend container
+        run: |
+          docker run -d \
+            --name clusterscope-backend \
+            -p 8000:8000 \
+            clusterscope-backend:smoke
+
+
+      # ----------------------------------------------------------
+      # Wait for backend
+      # ----------------------------------------------------------
+
+      - name: Wait for backend
+        run: |
+          echo "Waiting for backend..."
+
+          curl --fail \
+            --retry 10 \
+            --retry-delay 2 \
+            http://localhost:8000/healthz
+
+
+      # ----------------------------------------------------------
+      # OWASP ZAP Baseline Scan
+      #
+      # Baseline scan performs passive security testing.
+      # It does not actively attack the application.
+      # ----------------------------------------------------------
+
+      - name: Run OWASP ZAP baseline scan
+        run: |
+          docker run --rm \
+            --network host \
+            -v "$(pwd):/zap/wrk/:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t http://127.0.0.1:8000 \
+            -r zap-report.html \
+            -J zap-report.json \
+            -I
+
+
+      # ----------------------------------------------------------
+      # Upload ZAP reports
+      # ----------------------------------------------------------
+
+      - name: Upload ZAP reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-zap-${{ github.run_id }}
+          path: |
+            zap-report.html
+            zap-report.json
+          retention-days: 14
+
+
+      # ----------------------------------------------------------
+      # Collect Docker logs
+      # ----------------------------------------------------------
+
+      - name: Collect Docker logs
+        if: always()
+        run: |
+          docker logs clusterscope-backend \
+            > backend-zap-docker.log 2>&1 || true
+
+
+      # ----------------------------------------------------------
+      # Cleanup
+      # ----------------------------------------------------------
+
+      - name: Cleanup container
+        if: always()
+        run: |
+          docker rm -f clusterscope-backend || true
 
   # ============================================================
   # Frontend Image Push
@@ -422,8 +549,8 @@ jobs:
     runs-on: ubuntu-latest
 
     needs:
-      - image-smoke-test
       - image-trivy-vulnerability-scan
+      - image-dast
 
     if: |
       github.event_name == 'push' ||
