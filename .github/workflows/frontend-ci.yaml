@@ -1,4 +1,4 @@
-name: Frontend CI/CD
+name: Frontend CI
 
 on:
   workflow_dispatch:
@@ -38,8 +38,8 @@ jobs:
   # Frontend Validation
   # ============================================================
 
-  frontend-validation:
-    name: Frontend Validation
+  code-validation:
+    name: Code Validation
     runs-on: ubuntu-latest
 
     defaults:
@@ -75,11 +75,9 @@ jobs:
   # Frontend Static Security Analysis
   # ============================================================
 
-  frontend-sast:
-    name: Frontend SAST
+  code-sast:
+    name: Code SAST
     runs-on: ubuntu-latest
-
-    needs: frontend-validation
 
     permissions:
       security-events: write
@@ -103,11 +101,9 @@ jobs:
   # Trivy Configuration Scan
   # ============================================================
 
-  frontend-trivy-config:
-    name: Frontend Trivy Config Scan
+  trivy-image-config-scan:
+    name: Trivy Image Config Scan
     runs-on: ubuntu-latest
-
-    needs: frontend-sast
 
     permissions:
       contents: read
@@ -135,11 +131,14 @@ jobs:
   # Docker archive for the smoke-test job.
   # ============================================================
 
-  frontend-build-amd64:
-    name: Frontend Build AMD64
+  image-build-amd64:
+    name: Image Build AMD64
     runs-on: ubuntu-latest
 
-    needs: frontend-trivy-config
+    needs: 
+      - trivy-image-config-scan
+      - code-validation
+      - code-sast
 
     permissions:
       contents: read
@@ -220,11 +219,11 @@ jobs:
   # is scanned for known vulnerabilities.
   # ============================================================
 
-  frontend-trivy-vulnerability:
-    name: Frontend Trivy Scan
+  image-trivy-vulnerability-scan:
+    name: Image Trivy Vulnerability Scan
     runs-on: ubuntu-latest
 
-    needs: frontend-build-amd64
+    needs: image-build-amd64
 
     permissions:
       contents: read
@@ -277,11 +276,11 @@ jobs:
   # Download → Load → Run → Test
   # ============================================================
 
-  frontend-smoke-test:
-    name: Frontend Smoke Test
+  image-smoke-test:
+    name: Image Smoke Test
     runs-on: ubuntu-latest
 
-    needs: frontend-trivy-vulnerability
+    needs: image-build-amd64
 
     permissions:
       contents: read
@@ -415,11 +414,13 @@ jobs:
   #   linux/arm64
   # ============================================================
 
-  frontend-publish:
-    name: Frontend Publish
+  image-publish:
+    name: Image Publish
     runs-on: ubuntu-latest
 
-    needs: frontend-smoke-test
+    needs: 
+      - image-smoke-test
+      - image-trivy-vulnerability-scan
 
     if: |
       github.event_name == 'push' ||
@@ -516,11 +517,11 @@ jobs:
   # No rebuild.
   # ============================================================
 
-  frontend-promote:
-    name: Frontend Promote
+  image-promote:
+    name: Image Promote
     runs-on: ubuntu-latest
 
-    needs: frontend-publish
+    needs: image-publish
 
     permissions:
       contents: read
