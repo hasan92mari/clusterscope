@@ -129,7 +129,3 @@ gateway:
   tls:
     enabled: true
     existingSecret: clusterscope-tls
-
-  metallb:
-    enabled: true
-    ipAddress: 192.168.64.240/32
