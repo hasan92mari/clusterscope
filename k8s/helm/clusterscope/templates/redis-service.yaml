@@ -1,0 +1,21 @@
+{{- if .Values.redis.enabled }}
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: clusterscope-redis
+  namespace: {{ include "clusterscope.redisNamespace" . }}
+
+spec:
+  type: ClusterIP
+
+  selector:
+    app: clusterscope-redis
+
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+      protocol: TCP
+
+{{- end }}
