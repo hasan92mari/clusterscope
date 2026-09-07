@@ -1,11 +1,12 @@
+{{- if .Values.postgres.enabled }}
+
 apiVersion: v1
 kind: PersistentVolume
 metadata:
   name: clusterscope-postgres-pv
-
 spec:
   capacity:
-    storage: 1Gi
+    storage: {{ .Values.postgres.storage.size }}
 
   accessModes:
     - ReadWriteOnce
@@ -13,5 +14,7 @@ spec:
   persistentVolumeReclaimPolicy: Retain
 
   hostPath:
-    path: /data/clusterscope-postgres
+    path: {{ .Values.postgres.storage.hostPath }}
     type: DirectoryOrCreate
+
+{{- end }}

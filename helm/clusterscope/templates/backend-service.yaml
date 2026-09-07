@@ -1,0 +1,23 @@
+{{- if .Values.backend.enabled }}
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: clusterscope-backend
+  namespace: {{ include "clusterscope.backendNamespace" . }}
+  labels:
+    app: clusterscope-backend
+
+spec:
+  type: ClusterIP
+
+  selector:
+    app: clusterscope-backend
+
+  ports:
+    - name: http
+      port: {{ .Values.backend.service.port }}
+      targetPort: {{ .Values.backend.service.targetPort }}
+      protocol: TCP
+
+{{- end }}

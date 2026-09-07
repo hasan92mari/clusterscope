@@ -1,0 +1,129 @@
+namespaceMode: single
+
+namespaces:
+  single: clusterscope
+
+  frontend: clusterscope-frontend
+  backend: clusterscope-backend
+  redis: clusterscope-redis
+  postgres: clusterscope-postgres
+  gateway: clusterscope-gateway
+
+frontend:
+  enabled: true
+
+  replicas: 1
+
+  image:
+    repository: ghcr.io/hasan92mari/clusterscope-frontend
+    tag: latest
+    pullPolicy: Always
+
+  service:
+    port: 80
+    targetPort: 8080
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  backendUrl: ""
+  redisHost: ""
+  redisPort: "6379"
+
+  redisPassword: "clusterscope-dev-password"
+
+backend:
+  enabled: true
+
+  replicas: 1
+
+  image:
+    repository: ghcr.io/hasan92mari/clusterscope-backend
+    tag: latest
+    pullPolicy: Always
+
+  service:
+    port: 8000
+    targetPort: 8000
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  postgres:
+    host: ""
+    port: "5432"
+
+    username: clusterscope
+    password: clusterscope
+    database: clusterscope
+
+redis:
+  enabled: true
+
+  replicas: 1
+
+  image:
+    repository: redis
+    tag: 7-alpine
+    pullPolicy: IfNotPresent
+
+  password: "clusterscope-dev-password"
+
+  storage:
+    size: 1Gi
+    hostPath: /tmp/clusterscope-redis-data
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+postgres:
+  enabled: true
+
+  replicas: 1
+
+  image:
+    repository: postgres
+    tag: 17-alpine
+    pullPolicy: IfNotPresent
+
+  username: clusterscope
+  password: clusterscope
+  database: clusterscope
+
+  storage:
+    size: 1Gi
+    hostPath: /data/clusterscope-postgres
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+gateway:
+  enabled: true
+
+  gatewayClassName: envoy-gateway-class
+
+  hostname: clusterscope.com
+
+  tls:
+    enabled: true
+    existingSecret: clusterscope-tls
