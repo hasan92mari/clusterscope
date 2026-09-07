@@ -170,29 +170,6 @@ kubectl create secret tls clusterscope-tls \
   -n clusterscope-gateway
 ```
 
-The chart only references the existing Secret. It does not store or generate the certificate.
-
-> **Important:** Never expose or commit the `mkcert` CA private key (`rootCA-key.pem`).
-
----
-
-## Local DNS
-
-For local development, add the LoadBalancer IP to `/etc/hosts`.
-
-Example:
-
-```text
-192.168.64.240 clusterscope.com
-```
-
-Then access:
-
-```text
-https://clusterscope.com
-```
-
-The IP address depends on the LoadBalancer configuration of your cluster.
 
 ---
 
