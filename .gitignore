@@ -25,3 +25,5 @@ dist-ssr
 
 .env 
 .git
+
+k8s/gateway/tls-secret.yaml

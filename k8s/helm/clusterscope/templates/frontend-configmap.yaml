@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clusterscope-frontend-config
+  namespace: {{ include "clusterscope.frontendNamespace" . }}
+data:
+  backend-url: {{ default (printf "http://%s:8000" (include "clusterscope.backendHost" .)) .Values.frontend.backendUrl | quote }}
+  redis-host: {{ default (include "clusterscope.redisHost" .) .Values.frontend.redisHost | quote }}
+  redis-port: {{ .Values.frontend.redisPort | quote }}

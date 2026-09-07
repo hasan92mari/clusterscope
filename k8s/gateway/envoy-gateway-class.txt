@@ -1,0 +1,10 @@
+envoy-gateway-class helm chart:
+helm install eg \
+  oci://docker.io/envoyproxy/gateway-helm \
+  --version v1.9.1 \
+  -n envoy-gateway-system \
+  --create-namespace
+
+  MetalLB official manifest:
+
+  kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.15.3/config/manifests/metallb-native.yaml
