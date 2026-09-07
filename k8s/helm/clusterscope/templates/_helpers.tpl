@@ -99,3 +99,15 @@ clusterscope-redis.{{ .Values.namespaces.single }}.svc.cluster.local
 clusterscope-redis.{{ .Values.namespaces.redis }}.svc.cluster.local
 {{- end -}}
 {{- end }}
+
+{{/*
+PostgreSQL service DNS.
+*/}}
+{{- define "clusterscope.postgresHost" -}}
+{{- if eq .Values.namespaceMode "single" -}}
+clusterscope-postgres.{{ .Values.namespaces.single }}.svc.cluster.local
+{{- else -}}
+clusterscope-postgres.{{ .Values.namespaces.postgres }}.svc.cluster.local
+{{- end -}}
+{{- end }}
+

@@ -1,0 +1,12 @@
+{{- if .Values.backend.enabled }}
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clusterscope-backend-config
+  namespace: {{ include "clusterscope.backendNamespace" . }}
+data:
+  postgres-host: {{ default (include "clusterscope.postgresHost" .) .Values.backend.postgres.host | quote }}
+  postgres-port: {{ .Values.backend.postgres.port | quote }}
+
+{{- end }}
