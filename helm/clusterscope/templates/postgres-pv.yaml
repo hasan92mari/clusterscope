@@ -13,9 +13,8 @@ spec:
 
   persistentVolumeReclaimPolicy: Retain
 
-  storageClassName: {{ .Values.postgres.storageClassName }}
-
   hostPath:
     path: {{ .Values.postgres.storage.hostPath }}
+    type: DirectoryOrCreate
 
 {{- end }}

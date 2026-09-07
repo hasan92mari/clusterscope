@@ -12,7 +12,6 @@ spec:
 
   persistentVolumeReclaimPolicy: Retain
 
-  storageClassName: manual
-
   hostPath:
     path: /data/clusterscope-postgres
+    type: DirectoryOrCreate

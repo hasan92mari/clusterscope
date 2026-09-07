@@ -109,8 +109,6 @@ postgres:
     size: 1Gi
     hostPath: /data/clusterscope-postgres
 
-  storageClassName: manual
-
   resources:
     requests:
       cpu: 100m
