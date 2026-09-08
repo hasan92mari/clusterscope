@@ -66,6 +66,7 @@ spec:
       spec:
         accessModes:
           - ReadWriteOnce
+        storageClassName: {{ .Values.redis.storageClassName }}
         resources:
           requests:
             storage: {{ .Values.redis.storage.size }}

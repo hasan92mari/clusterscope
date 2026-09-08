@@ -81,7 +81,8 @@ redis:
 
   storage:
     size: 1Gi
-    hostPath: /tmp/clusterscope-redis-data
+
+  storageClassName: local-path
 
   resources:
     requests:
@@ -107,7 +108,8 @@ postgres:
 
   storage:
     size: 1Gi
-    hostPath: /data/clusterscope-postgres
+
+  storageClassName: local-path
 
   resources:
     requests:
