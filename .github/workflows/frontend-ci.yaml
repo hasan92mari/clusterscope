@@ -556,7 +556,6 @@ jobs:
     runs-on: ubuntu-latest
 
     needs:
-      - image-trivy-vulnerability-scan
       - image-dast
 
     if: |
