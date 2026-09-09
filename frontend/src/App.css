@@ -174,8 +174,20 @@
   font-size: 1.2rem;
 }
 
-.redis-card {
-  grid-column: span 3;
+.connection-ok {
+  color: #138a4b;
+}
+
+.connection-error {
+  color: #c43b3b;
+}
+
+.app.dark .connection-ok {
+  color: #6ee7a6;
+}
+
+.app.dark .connection-error {
+  color: #ff9b9b;
 }
 
 .redis-form {

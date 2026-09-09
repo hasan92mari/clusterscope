@@ -9,8 +9,7 @@
     "preview": "vite preview",
     "server": "tsx server/index.ts",
     "start": "node dist-server/server/index.js",
-    "test": "vitest",
-    "test:run": "vitest run"
+    "test": "vitest run"
   },
   "dependencies": {
     "@kubernetes/client-node": "^2.0.0",
