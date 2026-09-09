@@ -1,5 +1,61 @@
 # ClusterScope Helm Chart
 
+This page is the practical reference for deploying ClusterScope with Helm. The detailed sections below remain intentionally available for TLS, namespaces, storage, networking, and operations.
+
+## Quick start
+
+### Cluster prerequisites
+
+Prepare the following before installing the chart:
+
+- Helm 3 and access to a Kubernetes cluster.
+- A default `StorageClass` for Redis and PostgreSQL PVCs.
+- Gateway API CRDs and an installed Gateway controller, such as Envoy Gateway.
+- An existing `GatewayClass`; the default is `envoy-gateway-class`.
+- A TLS Secret named `clusterscope-tls` in the Gateway namespace.
+- MetalLB or another LoadBalancer implementation for external access on local clusters.
+
+The chart does not install these cluster-level prerequisites.
+
+### Install and verify
+
+Run these commands from the repository root:
+
+```bash
+helm install clusterscope ./helm/clusterscope
+kubectl get pods -n clusterscope
+kubectl get gateway,httproute -n clusterscope
+```
+
+Upgrade an existing release after changing values or templates:
+
+```bash
+helm upgrade clusterscope ./helm/clusterscope
+```
+
+Before installing, inspect the defaults if needed:
+
+```bash
+helm show values ./helm/clusterscope
+```
+
+### Chart at a glance
+
+| Component | Role |
+|---|---|
+| Frontend | Stateless dashboard, session access, and API proxy. |
+| Backend | Stateless API and PostgreSQL-backed user data. |
+| Redis | Shared session and cache storage. |
+| PostgreSQL | Persistent application data. |
+| Gateway + HTTPRoute | TLS entry point and traffic routing. |
+| RBAC | Minimal Pod-read permissions for runtime Pod information. |
+
+## How to use this reference
+
+For a first installation, read **Requirements**, **GatewayClass**, **TLS / HTTPS**, and **Installation** in that order. Use **Configuration**, **Secrets**, **Storage**, and **Scaling** when adapting the deployment. The final sections cover validation, upgrades, removal, and chart structure.
+
+> Argo CD and GitOps deployment guidance will be added in a future update.
+
 Helm chart for deploying the ClusterScope application on Kubernetes.
 
 The chart supports two deployment modes:
