@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 import https from "https";
+import { randomUUID } from "crypto";
 
 const app = express();
 const port = Number(process.env.PORT) || 8080;
@@ -42,6 +43,33 @@ const redis = createClient({
     },
   },
 });
+
+const uiSessionCookie = "clusterscope_ui_session";
+const uiSessionTtlSeconds = 60 * 60 * 24;
+
+function getUiSessionId(request: express.Request, response: express.Response): string {
+  const cookies = Object.fromEntries(
+    (request.headers.cookie || "")
+      .split(";")
+      .map((item) => item.trim().split("=", 2))
+      .filter(([key, value]) => Boolean(key && value))
+  );
+  const existingId = cookies[uiSessionCookie];
+
+  if (existingId && /^[a-f0-9-]{36}$/i.test(existingId)) {
+    return existingId;
+  }
+
+  const sessionId = randomUUID();
+  response.cookie(uiSessionCookie, sessionId, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: uiSessionTtlSeconds * 1000,
+    path: "/",
+  });
+  return sessionId;
+}
 
 redis.on("error", (error) => {
   console.error("Redis error:", error);
@@ -344,6 +372,58 @@ app.get("/api/session/status", async (_req, res) => {
     res.json({
       connected: false,
     });
+  }
+});
+
+/*
+ * UI preferences are stored in Redis, never in a Pod's memory. The browser
+ * only receives an opaque HttpOnly cookie, so any frontend Pod can retrieve
+ * the same temporary preferences after load balancing.
+ */
+app.get("/api/preferences", async (req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+
+    if (!redis.isReady) {
+      return res.status(503).json({ connected: false });
+    }
+
+    const sessionId = getUiSessionId(req, res);
+    const key = `ui-session:${sessionId}`;
+    const preferences = await redis.hGetAll(key);
+    await redis.expire(key, uiSessionTtlSeconds);
+
+    return res.json({
+      connected: true,
+      name: preferences.name || "",
+      language: preferences.language || "en",
+      theme: preferences.theme || "light",
+    });
+  } catch (error) {
+    console.error("Preference lookup error:", error);
+    return res.status(503).json({ connected: false });
+  }
+});
+
+app.put("/api/preferences", async (req, res) => {
+  try {
+    if (!redis.isReady) {
+      return res.status(503).json({ connected: false });
+    }
+
+    const name = typeof req.body.name === "string" ? req.body.name.trim().slice(0, 100) : "";
+    const language = ["en", "de", "ar"].includes(req.body.language) ? req.body.language : "en";
+    const theme = req.body.theme === "dark" ? "dark" : "light";
+    const sessionId = getUiSessionId(req, res);
+    const key = `ui-session:${sessionId}`;
+
+    await redis.hSet(key, { name, language, theme });
+    await redis.expire(key, uiSessionTtlSeconds);
+
+    return res.json({ connected: true, name, language, theme });
+  } catch (error) {
+    console.error("Preference save error:", error);
+    return res.status(503).json({ connected: false });
   }
 });
 

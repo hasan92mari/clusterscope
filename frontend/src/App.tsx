@@ -45,6 +45,7 @@ const translations = {
 function App() {
   const [language, setLanguage] = useState<Language>('en');
   const [darkMode, setDarkMode] = useState(false);
+  const [preferencesReady, setPreferencesReady] = useState(false);
   const [clusterConfig, setClusterConfig] = useState<ClusterConfig>({
     podIp: 'Loading...',
     namespace: 'Loading...',
@@ -99,6 +100,73 @@ function App() {
     document.documentElement.lang = language;
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
   }, [language]);
+
+  /**
+   * The browser sends its HttpOnly cookie automatically. The selected
+   * frontend Pod then reads the preferences from shared Redis.
+   */
+  useEffect(() => {
+    const loadPreferences = async () => {
+      try {
+        const response = await fetch('/api/preferences', {
+          cache: 'no-store',
+          credentials: 'same-origin',
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to load preferences');
+        }
+
+        const data: {
+          name?: unknown;
+          language?: unknown;
+          theme?: unknown;
+        } = await response.json();
+
+        if (typeof data.name === 'string') {
+          setName(data.name);
+        }
+
+        if (data.language === 'en' || data.language === 'de' || data.language === 'ar') {
+          setLanguage(data.language);
+        }
+
+        setDarkMode(data.theme === 'dark');
+      } catch (error) {
+        console.error('Failed to load Redis preferences:', error);
+      } finally {
+        setPreferencesReady(true);
+      }
+    };
+
+    loadPreferences();
+  }, []);
+
+  /** Persist profile preferences in the shared, expiring Redis session. */
+  useEffect(() => {
+    if (!preferencesReady) {
+      return;
+    }
+
+    const savePreferences = async () => {
+      try {
+        await fetch('/api/preferences', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            name: name.trim(),
+            language,
+            theme: darkMode ? 'dark' : 'light',
+          }),
+        });
+      } catch (error) {
+        console.error('Failed to save Redis preferences:', error);
+      }
+    };
+
+    savePreferences();
+  }, [darkMode, language, name, preferencesReady]);
 
   /**
    * Load Kubernetes environment values.
