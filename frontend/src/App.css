@@ -241,6 +241,8 @@
 
 .backend-card {
   grid-column: 1 / -1;
+  background: #f7f1ff;
+  border-color: #d7c5f0;
 }
 
 .backend-header {
@@ -275,6 +277,57 @@
   gap: 0.25rem;
 }
 
+.backend-info-grid .info-item,
+.backend-data-card {
+  border: 1px solid #d7c5f0;
+  border-radius: 10px;
+  background: #fffaff;
+  padding: 16px;
+}
+
+.backend-user-data-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.backend-data-card span {
+  display: block;
+  color: #72529b;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.backend-data-card p {
+  color: #5f6170;
+}
+
+.backend-data-card strong {
+  display: block;
+  margin-top: 12px;
+  font-size: 1.35rem;
+}
+
+.app.dark .backend-card {
+  background: #231d34;
+  border-color: #594878;
+}
+
+.app.dark .backend-info-grid .info-item,
+.app.dark .backend-data-card {
+  background: #2c2440;
+  border-color: #594878;
+}
+
+.app.dark .backend-data-card span {
+  color: #d3b8ff;
+}
+
+.app.dark .backend-data-card p {
+  color: #c5bdd4;
+}
+
 .info-item span {
   font-size: 0.85rem;
   opacity: 0.7;
@@ -304,6 +357,10 @@
   }
 
   .backend-info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .backend-user-data-grid {
     grid-template-columns: 1fr;
   }
 }

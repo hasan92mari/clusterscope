@@ -1,4 +1,7 @@
 import os
+import json
+import ssl
+import urllib.request
 
 from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy import text
@@ -23,15 +26,49 @@ def create_tables() -> None:
         print(f"Database unavailable: {error}")
 
 
+def get_current_pod_info() -> tuple[str | None, int]:
+    """Read start time and restart count for this Pod from Kubernetes."""
+    pod_name = os.getenv("POD_NAME")
+    namespace = os.getenv("POD_NAMESPACE")
+    token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+    ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+    if not pod_name or not namespace or not os.path.exists(token_path):
+        return None, 0
+
+    try:
+        with open(token_path, encoding="utf-8") as token_file:
+            token = token_file.read().strip()
+
+        host = os.getenv("KUBERNETES_SERVICE_HOST", "kubernetes.default.svc")
+        port = os.getenv("KUBERNETES_SERVICE_PORT_HTTPS", "443")
+        url = f"https://{host}:{port}/api/v1/namespaces/{namespace}/pods/{pod_name}"
+        request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+        context = ssl.create_default_context(cafile=ca_path if os.path.exists(ca_path) else None)
+
+        with urllib.request.urlopen(request, context=context, timeout=5) as response:
+            pod = json.load(response)
+
+        status = pod.get("status", {})
+        containers = status.get("containerStatuses", []) or []
+        restart_count = sum(int(container.get("restartCount", 0)) for container in containers)
+        return status.get("startTime"), restart_count
+    except Exception as error:
+        print(f"Kubernetes Pod info unavailable: {error}")
+        return None, 0
+
+
 def get_pod_status() -> dict[str, str | int | None]:
+    pod_start_time, restart_count = get_current_pod_info()
+
     return {
         "podIp": os.getenv("POD_IP"),
         "namespace": os.getenv("POD_NAMESPACE"),
         "appName": os.getenv("APP_NAME"),
         "podName": os.getenv("POD_NAME"),
         "nodeName": os.getenv("NODE_NAME"),
-        "podStartTime": None,
-        "restartCount": 0,
+        "podStartTime": pod_start_time,
+        "restartCount": restart_count,
     }
 
 

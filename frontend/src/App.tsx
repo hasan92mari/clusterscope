@@ -677,140 +677,36 @@ function App() {
             </div>
           )}
 
-          {/* PostgreSQL */}
+          {backendConnected && (
+            <div className="backend-user-data-grid">
+              <section className="backend-data-card">
+                <span>Store user data</span>
+                <p>{name.trim() ? `Saving data for ${name.trim()}` : 'Enter your name above to save data.'}</p>
+                <div className="magic-number-form">
+                  <input
+                    type="number"
+                    placeholder="Enter a value"
+                    value={backendMagicInput}
+                    onChange={(event) => setBackendMagicInput(event.target.value)}
+                    onKeyDown={(event) => { if (event.key === 'Enter') updateBackendMagicValue(); }}
+                  />
+                  <button type="button" onClick={updateBackendMagicValue} disabled={!name.trim() || !backendMagicInput.trim() || backendMagicLoading}>
+                    {backendMagicLoading ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </section>
 
-          {backendConnected &&
-            name.trim() && (
-              <div className="backend-magic-section">
-                <span>
-                  PostgreSQL
-                </span>
-
-                {backendMagicLoading ? (
-                  <strong>
-                    Loading...
-                  </strong>
-                ) : backendMagicValue !==
-                  null ? (
-                  <>
-                    <p className="backend-magic-message">
-                      Real magic value:{' '}
-                      <strong>
-                        {
-                          backendMagicValue
-                        }
-                      </strong>
-                    </p>
-
-                    <div className="magic-number-form">
-                      <input
-                        type="number"
-                        placeholder="Enter new real magic value"
-                        value={
-                          backendMagicInput
-                        }
-                        onChange={(
-                          event
-                        ) =>
-                          setBackendMagicInput(
-                            event
-                              .target
-                              .value
-                          )
-                        }
-                        onKeyDown={(
-                          event
-                        ) => {
-                          if (
-                            event.key ===
-                            'Enter'
-                          ) {
-                            updateBackendMagicValue();
-                          }
-                        }}
-                      />
-
-                      <button
-                        type="button"
-                        onClick={
-                          updateBackendMagicValue
-                        }
-                        disabled={
-                          !backendMagicInput.trim() ||
-                          backendMagicLoading
-                        }
-                      >
-                        {backendMagicLoading
-                          ? 'Updating...'
-                          : 'Update'}
-                      </button>
-                    </div>
-
-                    {backendMagicSaved && (
-                      <p className="backend-magic-success">
-                        ✓ Real magic
-                        value updated
-                        successfully
-                      </p>
-                    )}
-                  </>
+              <section className="backend-data-card">
+                <span>Saved user data</span>
+                {backendMagicLoading ? <strong>Loading...</strong> : backendMagicValue !== null ? (
+                  <strong>{backendMagicValue}</strong>
                 ) : (
-                  <>
-                    <p className="backend-magic-message">
-                      No real magic value
-                      found for{' '}
-                      <strong>
-                        {name.trim()}
-                      </strong>
-                    </p>
-
-                    <div className="magic-number-form">
-                      <input
-                        type="number"
-                        placeholder="Enter real magic value"
-                        value={
-                          backendMagicInput
-                        }
-                        onChange={(
-                          event
-                        ) =>
-                          setBackendMagicInput(
-                            event
-                              .target
-                              .value
-                          )
-                        }
-                        onKeyDown={(
-                          event
-                        ) => {
-                          if (
-                            event.key ===
-                            'Enter'
-                          ) {
-                            updateBackendMagicValue();
-                          }
-                        }}
-                      />
-
-                      <button
-                        type="button"
-                        onClick={
-                          updateBackendMagicValue
-                        }
-                        disabled={
-                          !backendMagicInput.trim() ||
-                          backendMagicLoading
-                        }
-                      >
-                        {backendMagicLoading
-                          ? 'Saving...'
-                          : 'Save'}
-                      </button>
-                    </div>
-                  </>
+                  <p>{name.trim() ? `No saved value for ${name.trim()}.` : 'Enter your name to view saved data.'}</p>
                 )}
-              </div>
-            )}
+                {backendMagicSaved && <p className="backend-magic-success">✓ Data saved successfully</p>}
+              </section>
+            </div>
+          )}
         </div>
       </main>
     </div>

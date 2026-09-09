@@ -19,6 +19,7 @@ spec:
         app: clusterscope-backend
 
     spec:
+      serviceAccountName: clusterscope-backend
       containers:
         - name: backend
           image: ghcr.io/hasan92mari/clusterscope-backend:latest

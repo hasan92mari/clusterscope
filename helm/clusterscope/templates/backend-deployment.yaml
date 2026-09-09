@@ -21,6 +21,7 @@ spec:
         app: clusterscope-backend
 
     spec:
+      serviceAccountName: clusterscope-backend
       containers:
         - name: backend
 
