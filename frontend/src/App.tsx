@@ -22,7 +22,29 @@ interface BackendStatus {
   restartCount: number;
 }
 
+type Language = 'en' | 'de' | 'ar';
+
+const translations = {
+  en: {
+    subtitle: 'Kubernetes Environment Dashboard', greeting: 'Hello', greetingEmpty: 'Welcome to your cluster dashboard',
+    nameLabel: 'Your name', language: 'Language', theme: 'Dark mode', demo: 'Demo',
+    uptime: 'Pod Uptime', podIp: 'Pod IP', namespace: 'Namespace', application: 'Application', pod: 'Pod', node: 'Node', restarts: 'Restart Count',
+  },
+  de: {
+    subtitle: 'Kubernetes-Umgebungsübersicht', greeting: 'Hallo', greetingEmpty: 'Willkommen zu deiner Cluster-Übersicht',
+    nameLabel: 'Dein Name', language: 'Sprache', theme: 'Dunkler Modus', demo: 'Demo',
+    uptime: 'Pod-Laufzeit', podIp: 'Pod-IP', namespace: 'Namespace', application: 'Anwendung', pod: 'Pod', node: 'Knoten', restarts: 'Neustarts',
+  },
+  ar: {
+    subtitle: 'لوحة معلومات بيئة كوبرنيتس', greeting: 'مرحباً', greetingEmpty: 'أهلاً بك في لوحة معلومات الكلاستر',
+    nameLabel: 'اسمك', language: 'اللغة', theme: 'الوضع الداكن', demo: 'تجريبي',
+    uptime: 'مدة عمل Pod', podIp: 'عنوان Pod', namespace: 'مساحة الأسماء', application: 'التطبيق', pod: 'Pod', node: 'العقدة', restarts: 'عدد إعادة التشغيل',
+  },
+} as const;
+
 function App() {
+  const [language, setLanguage] = useState<Language>('en');
+  const [darkMode, setDarkMode] = useState(false);
   const [clusterConfig, setClusterConfig] = useState<ClusterConfig>({
     podIp: 'Loading...',
     namespace: 'Loading...',
@@ -70,6 +92,13 @@ function App() {
   const [checking, setChecking] = useState(false);
 
   const [saving, setSaving] = useState(false);
+
+  const t = translations[language];
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+    document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
+  }, [language]);
 
   /**
    * Load Kubernetes environment values.
@@ -485,26 +514,84 @@ function App() {
     }
   };
 
+  const handleNameChange = (value: string) => {
+    setName(value);
+    setNameChecked(false);
+    setFoundMagicNumber(null);
+    setMagicNumber('');
+    setSaved(false);
+    setBackendMagicValue(null);
+    setBackendMagicInput('');
+    setBackendMagicSaved(false);
+  };
+
   return (
-    <div className="app">
+    <div className={`app ${darkMode ? 'dark' : ''}`}>
       <header className="header">
         <div>
           <h1>ClusterScope</h1>
           <p>
-            Kubernetes Environment Dashboard
+            {t.subtitle}
           </p>
         </div>
 
-        <span className="status">
-          ● Demo
-        </span>
+        <div className="header-controls">
+          <label className="control-label" htmlFor="language-select">
+            {t.language}
+            <select
+              id="language-select"
+              value={language}
+              onChange={(event) => setLanguage(event.target.value as Language)}
+            >
+              <option value="en">English</option>
+              <option value="de">Deutsch</option>
+              <option value="ar">العربية</option>
+            </select>
+          </label>
+          <button
+            className="theme-button"
+            type="button"
+            onClick={() => setDarkMode((current) => !current)}
+            aria-pressed={darkMode}
+          >
+            {darkMode ? '☀' : '☾'} {t.theme}
+          </button>
+          <span className="status">● {t.demo}</span>
+        </div>
       </header>
 
       <main className="dashboard">
+        <section className="welcome-card">
+          <div>
+            <span>{t.nameLabel}</span>
+            <strong>
+              {name.trim()
+                ? `${t.greeting}, ${name.trim()}!`
+                : t.greetingEmpty}
+            </strong>
+          </div>
+          <p>
+            {language === 'ar'
+              ? 'يُستخدم الاسم كمفتاح للجلسة المركزية المحفوظة في Redis بين جميع Pods.'
+              : language === 'de'
+                ? 'Der Name wird als Schlüssel für die zentrale Redis-Sitzung zwischen allen Pods verwendet.'
+                : 'Your name is used as the key for the central Redis session shared by all Pods.'}
+          </p>
+          <label className="welcome-name" htmlFor="user-name">
+            {t.nameLabel}
+            <input
+              id="user-name"
+              type="text"
+              value={name}
+              placeholder={language === 'ar' ? 'اكتب اسمك' : language === 'de' ? 'Gib deinen Namen ein' : 'Enter your name'}
+              onChange={(event) => handleNameChange(event.target.value)}
+            />
+          </label>
+        </section>
         {/* Kubernetes information */}
 
         <div className="card">
-          <span>Pod Uptime</span>
+          <span>{t.uptime}</span>
           <strong>
             {formatUptime(
               uptimeSeconds
@@ -513,42 +600,42 @@ function App() {
         </div>
 
         <div className="card">
-          <span>Pod IP</span>
+          <span>{t.podIp}</span>
           <strong>
             {clusterConfig.podIp}
           </strong>
         </div>
 
         <div className="card">
-          <span>Namespace</span>
+          <span>{t.namespace}</span>
           <strong>
             {clusterConfig.namespace}
           </strong>
         </div>
 
         <div className="card">
-          <span>Application</span>
+          <span>{t.application}</span>
           <strong>
             {clusterConfig.appName}
           </strong>
         </div>
 
         <div className="card">
-          <span>Pod</span>
+          <span>{t.pod}</span>
           <strong>
             {clusterConfig.podName}
           </strong>
         </div>
 
         <div className="card">
-          <span>Node</span>
+          <span>{t.node}</span>
           <strong>
             {clusterConfig.nodeName}
           </strong>
         </div>
 
         <div className="card">
-          <span>Restart Count</span>
+          <span>{t.restarts}</span>
           <strong>
             {clusterConfig.restartCount}
           </strong>
@@ -576,39 +663,7 @@ function App() {
                     placeholder="Enter name"
                     value={name}
                     onChange={(event) => {
-                      setName(
-                        event.target.value
-                      );
-
-                      setNameChecked(
-                        false
-                      );
-
-                      setFoundMagicNumber(
-                        null
-                      );
-
-                      setMagicNumber(
-                        ''
-                      );
-
-                      setSaved(false);
-
-                      /*
-                       * Clear the old PostgreSQL
-                       * value when the name changes.
-                       */
-                      setBackendMagicValue(
-                        null
-                      );
-
-                      setBackendMagicInput(
-                        ''
-                      );
-
-                      setBackendMagicSaved(
-                        false
-                      );
+                      handleNameChange(event.target.value);
                     }}
                     onKeyDown={(event) => {
                       if (

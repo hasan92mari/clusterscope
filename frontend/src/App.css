@@ -1,6 +1,14 @@
 .app {
   min-height: 100vh;
   padding: 40px;
+  background: #f4f7fb;
+  color: #172033;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.app.dark {
+  background: #101827;
+  color: #eef4ff;
 }
 
 .header {
@@ -19,6 +27,52 @@
 .header p {
   margin-top: 8px;
   color: #666;
+}
+
+.app.dark .header p,
+.app.dark .card span,
+.app.dark .info-item span {
+  color: #aebbd0;
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.control-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #52647d;
+  font-size: 0.85rem;
+}
+
+.control-label select,
+.theme-button {
+  border: 1px solid #ccd6e4;
+  border-radius: 8px;
+  background: white;
+  color: #172033;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.theme-button {
+  cursor: pointer;
+}
+
+.app.dark .control-label,
+.app.dark .status {
+  color: #b8c8e2;
+}
+
+.app.dark .control-label select,
+.app.dark .theme-button {
+  border-color: #40516b;
+  background: #243147;
+  color: #eef4ff;
 }
 
 .status {
@@ -41,6 +95,72 @@
   border: 1px solid #ddd;
   border-radius: 12px;
   background: white;
+}
+
+.app.dark .card,
+.app.dark .backend-card,
+.app.dark .welcome-card {
+  border-color: #34425a;
+  background: #1a2639;
+}
+
+.welcome-card {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 24px;
+  border: 1px solid #bdd1ee;
+  border-radius: 12px;
+  background: #eaf2ff;
+}
+
+.welcome-card span {
+  display: block;
+  margin-bottom: 6px;
+  color: #46678f;
+  font-size: 0.85rem;
+}
+
+.welcome-card strong {
+  font-size: 1.35rem;
+}
+
+.welcome-card p {
+  max-width: 410px;
+  margin: 0;
+  color: #466078;
+  line-height: 1.5;
+}
+
+.welcome-name {
+  display: grid;
+  min-width: 210px;
+  gap: 6px;
+  color: #466078;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.welcome-name input {
+  border: 1px solid #b6c7df;
+  border-radius: 8px;
+  background: white;
+  color: #172033;
+  padding: 10px;
+}
+
+.app.dark .welcome-card span,
+.app.dark .welcome-card p,
+.app.dark .welcome-name {
+  color: #b7c8e5;
+}
+
+.app.dark .welcome-name input {
+  border-color: #40516b;
+  background: #101827;
+  color: #eef4ff;
 }
 
 .card span {
@@ -153,6 +273,24 @@
 }
 
 @media (max-width: 768px) {
+  .app {
+    padding: 22px;
+  }
+
+  .header,
+  .welcome-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .header-controls {
+    flex-wrap: wrap;
+  }
+
+  .welcome-name {
+    width: 100%;
+  }
+
   .backend-info-grid {
     grid-template-columns: 1fr;
   }
