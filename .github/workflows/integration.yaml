@@ -44,7 +44,7 @@ jobs:
       # --------------------------------------------------
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
 
       # --------------------------------------------------
@@ -239,6 +239,8 @@ jobs:
 
       - name: Start Frontend
         run: |
+          # The integration runner uses HTTP on localhost; production keeps
+          # NODE_ENV=production and therefore emits Secure session cookies.
           docker run -d \
             --name clusterscope-frontend \
             --network clusterscope-network \
@@ -246,6 +248,17 @@ jobs:
             -e REDIS_HOST=clusterscope-redis \
             -e REDIS_PORT=6379 \
             -e BACKEND_URL=http://clusterscope-backend:8000 \
+            -e NODE_ENV=test \
+            "${FRONTEND_IMAGE}:${FRONTEND_TAG}"
+
+          docker run -d \
+            --name clusterscope-frontend-2 \
+            --network clusterscope-network \
+            -p 8081:8080 \
+            -e REDIS_HOST=clusterscope-redis \
+            -e REDIS_PORT=6379 \
+            -e BACKEND_URL=http://clusterscope-backend:8000 \
+            -e NODE_ENV=test \
             "${FRONTEND_IMAGE}:${FRONTEND_TAG}"
 
 
@@ -256,8 +269,8 @@ jobs:
       - name: Wait for Frontend
         run: |
           for i in {1..30}; do
-            if curl --fail --silent \
-              http://localhost:8080/healthz; then
+            if curl --fail --silent http://localhost:8080/healthz \
+              && curl --fail --silent http://localhost:8081/healthz; then
 
               echo
               echo "Frontend is ready."
@@ -319,44 +332,51 @@ jobs:
       # 15.1 Frontend → Redis
       # --------------------------------------------------
 
-      - name: Test Frontend to Redis
+      - name: Test cookie-backed Frontend session in Redis
         run: |
-          echo "Saving value through Frontend → Redis..."
+          COOKIE_JAR=/tmp/clusterscope-preferences.cookie
 
-          POST_RESPONSE=$(curl --fail-with-body \
-            -X POST \
-            http://localhost:8080/api/session/integration-test \
+          echo "Saving temporary preferences through Frontend → Redis..."
+
+          PUT_RESPONSE=$(curl --fail-with-body \
+            -c "$COOKIE_JAR" \
+            -X PUT \
+            http://localhost:8080/api/preferences \
             -H "Content-Type: application/json" \
-            -d '{"magicNumber":"42"}')
+            -d '{"name":"integration-test","language":"de","theme":"dark"}')
 
-          echo "POST response:"
-          echo "$POST_RESPONSE"
+          echo "PUT response:"
+          echo "$PUT_RESPONSE"
 
-          echo "$POST_RESPONSE" | jq -e '
+          echo "$PUT_RESPONSE" | jq -e '
             .connected == true and
-            .saved == true and
-            .magicNumber == "42"
+            .name == "integration-test" and
+            .language == "de" and
+            .theme == "dark"
           ' > /dev/null
 
-          echo "Redis save through Frontend passed."
+          test -s "$COOKIE_JAR"
+          echo "Cookie-backed Redis session saved."
 
 
           echo
-          echo "Reading value through Frontend → Redis..."
+          echo "Reading preferences through the second Frontend instance..."
 
           GET_RESPONSE=$(curl --fail-with-body \
-            http://localhost:8080/api/session/integration-test)
+            -b "$COOKIE_JAR" \
+            http://localhost:8081/api/preferences)
 
           echo "GET response:"
           echo "$GET_RESPONSE"
 
           echo "$GET_RESPONSE" | jq -e '
             .connected == true and
-            .found == true and
-            .magicNumber == "42"
+            .name == "integration-test" and
+            .language == "de" and
+            .theme == "dark"
           ' > /dev/null
 
-          echo "Redis read through Frontend passed."
+          echo "Cookie-backed Redis session read passed."
 
 
       # --------------------------------------------------
@@ -494,6 +514,7 @@ jobs:
         run: |
           docker rm -f \
             clusterscope-frontend \
+            clusterscope-frontend-2 \
             clusterscope-backend \
             clusterscope-postgres \
             clusterscope-redis || true

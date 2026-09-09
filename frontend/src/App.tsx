@@ -22,7 +22,30 @@ interface BackendStatus {
   restartCount: number;
 }
 
+type Language = 'en' | 'de' | 'ar';
+
+const translations = {
+  en: {
+    subtitle: 'Kubernetes Environment Dashboard', greeting: 'Hello', greetingEmpty: 'Welcome to your cluster dashboard',
+    nameLabel: 'Your name', language: 'Language', theme: 'Dark mode', demo: 'Demo',
+    uptime: 'Pod Uptime', podIp: 'Pod IP', namespace: 'Namespace', application: 'Application', pod: 'Pod', node: 'Node', restarts: 'Restart Count',
+  },
+  de: {
+    subtitle: 'Kubernetes-Umgebungsübersicht', greeting: 'Hallo', greetingEmpty: 'Willkommen zu deiner Cluster-Übersicht',
+    nameLabel: 'Dein Name', language: 'Sprache', theme: 'Dunkler Modus', demo: 'Demo',
+    uptime: 'Pod-Laufzeit', podIp: 'Pod-IP', namespace: 'Namespace', application: 'Anwendung', pod: 'Pod', node: 'Knoten', restarts: 'Neustarts',
+  },
+  ar: {
+    subtitle: 'لوحة معلومات بيئة كوبرنيتس', greeting: 'مرحباً', greetingEmpty: 'أهلاً بك في لوحة معلومات الكلاستر',
+    nameLabel: 'اسمك', language: 'اللغة', theme: 'الوضع الداكن', demo: 'تجريبي',
+    uptime: 'مدة عمل Pod', podIp: 'عنوان Pod', namespace: 'مساحة الأسماء', application: 'التطبيق', pod: 'Pod', node: 'العقدة', restarts: 'عدد إعادة التشغيل',
+  },
+} as const;
+
 function App() {
+  const [language, setLanguage] = useState<Language>('en');
+  const [darkMode, setDarkMode] = useState(false);
+  const [preferencesReady, setPreferencesReady] = useState(false);
   const [clusterConfig, setClusterConfig] = useState<ClusterConfig>({
     podIp: 'Loading...',
     namespace: 'Loading...',
@@ -58,18 +81,79 @@ function App() {
 
   const [name, setName] = useState('');
 
-  const [magicNumber, setMagicNumber] = useState('');
+  const t = translations[language];
 
-  const [foundMagicNumber, setFoundMagicNumber] =
-    useState<string | null>(null);
+  useEffect(() => {
+    document.documentElement.lang = language;
+    document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
+  }, [language]);
 
-  const [nameChecked, setNameChecked] = useState(false);
+  /**
+   * The browser sends its HttpOnly cookie automatically. The selected
+   * frontend Pod then reads the preferences from shared Redis.
+   */
+  useEffect(() => {
+    const loadPreferences = async () => {
+      try {
+        const response = await fetch('/api/preferences', {
+          cache: 'no-store',
+          credentials: 'same-origin',
+        });
 
-  const [saved, setSaved] = useState(false);
+        if (!response.ok) {
+          throw new Error('Failed to load preferences');
+        }
 
-  const [checking, setChecking] = useState(false);
+        const data: {
+          name?: unknown;
+          language?: unknown;
+          theme?: unknown;
+        } = await response.json();
 
-  const [saving, setSaving] = useState(false);
+        if (typeof data.name === 'string') {
+          setName(data.name);
+        }
+
+        if (data.language === 'en' || data.language === 'de' || data.language === 'ar') {
+          setLanguage(data.language);
+        }
+
+        setDarkMode(data.theme === 'dark');
+      } catch (error) {
+        console.error('Failed to load Redis preferences:', error);
+      } finally {
+        setPreferencesReady(true);
+      }
+    };
+
+    loadPreferences();
+  }, []);
+
+  /** Persist profile preferences in the shared, expiring Redis session. */
+  useEffect(() => {
+    if (!preferencesReady) {
+      return;
+    }
+
+    const savePreferences = async () => {
+      try {
+        await fetch('/api/preferences', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            name: name.trim(),
+            language,
+            theme: darkMode ? 'dark' : 'light',
+          }),
+        });
+      } catch (error) {
+        console.error('Failed to save Redis preferences:', error);
+      }
+    };
+
+    savePreferences();
+  }, [darkMode, language, name, preferencesReady]);
 
   /**
    * Load Kubernetes environment values.
@@ -369,142 +453,80 @@ function App() {
     checkRedisStatus();
   }, []);
 
-  /**
-   * Check whether a name exists in Redis.
-   */
-  const checkName = async () => {
-    const trimmedName =
-      name.trim();
-
-    if (!trimmedName) {
-      return;
-    }
-
-    setChecking(true);
-    setNameChecked(false);
-    setFoundMagicNumber(null);
-    setMagicNumber('');
-    setSaved(false);
-
-    try {
-      const response =
-        await fetch(
-          `/api/session/${encodeURIComponent(
-            trimmedName
-          )}`,
-          {
-            cache: 'no-store',
-          }
-        );
-
-      const data =
-        await response.json();
-
-      if (!data.connected) {
-        setRedisConnected(false);
-        return;
-      }
-
-      setRedisConnected(true);
-
-      setNameChecked(true);
-
-      if (data.found) {
-        setFoundMagicNumber(
-          data.magicNumber
-        );
-      }
-    } catch {
-      setRedisConnected(false);
-    } finally {
-      setChecking(false);
-    }
-  };
-
-  /**
-   * Save or update the Redis magic number.
-   */
-  const saveMagicNumber = async () => {
-    const trimmedName =
-      name.trim();
-
-    const trimmedMagicNumber =
-      magicNumber.trim();
-
-    if (
-      !trimmedName ||
-      !trimmedMagicNumber
-    ) {
-      return;
-    }
-
-    setSaving(true);
-    setSaved(false);
-
-    try {
-      const response =
-        await fetch(
-          `/api/session/${encodeURIComponent(
-            trimmedName
-          )}`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type':
-                'application/json',
-            },
-            body: JSON.stringify({
-              magicNumber:
-                trimmedMagicNumber,
-            }),
-          }
-        );
-
-      const data =
-        await response.json();
-
-      if (!data.connected) {
-        setRedisConnected(false);
-        return;
-      }
-
-      if (data.saved) {
-        setRedisConnected(true);
-        setSaved(true);
-
-        setFoundMagicNumber(
-          data.magicNumber
-        );
-
-        setMagicNumber('');
-      }
-    } catch {
-      setRedisConnected(false);
-    } finally {
-      setSaving(false);
-    }
+  const handleNameChange = (value: string) => {
+    setName(value);
+    setBackendMagicValue(null);
+    setBackendMagicInput('');
+    setBackendMagicSaved(false);
   };
 
   return (
-    <div className="app">
+    <div className={`app ${darkMode ? 'dark' : ''}`}>
       <header className="header">
         <div>
           <h1>ClusterScope</h1>
           <p>
-            Kubernetes Environment Dashboard
+            {t.subtitle}
           </p>
         </div>
 
-        <span className="status">
-          ● Demo
-        </span>
+        <div className="header-controls">
+          <label className="control-label" htmlFor="language-select">
+            {t.language}
+            <select
+              id="language-select"
+              value={language}
+              onChange={(event) => setLanguage(event.target.value as Language)}
+            >
+              <option value="en">English</option>
+              <option value="de">Deutsch</option>
+              <option value="ar">العربية</option>
+            </select>
+          </label>
+          <button
+            className="theme-button"
+            type="button"
+            onClick={() => setDarkMode((current) => !current)}
+            aria-pressed={darkMode}
+          >
+            {darkMode ? '☀' : '☾'} {t.theme}
+          </button>
+          <span className="status">● {t.demo}</span>
+        </div>
       </header>
 
       <main className="dashboard">
+        <section className="welcome-card">
+          <div>
+            <span>{t.nameLabel}</span>
+            <strong>
+              {name.trim()
+                ? `${t.greeting}, ${name.trim()}!`
+                : t.greetingEmpty}
+            </strong>
+          </div>
+          <p>
+            {language === 'ar'
+              ? 'يُستخدم الاسم كمفتاح للجلسة المركزية المحفوظة في Redis بين جميع Pods.'
+              : language === 'de'
+                ? 'Der Name wird als Schlüssel für die zentrale Redis-Sitzung zwischen allen Pods verwendet.'
+                : 'Your name is used as the key for the central Redis session shared by all Pods.'}
+          </p>
+          <label className="welcome-name" htmlFor="user-name">
+            {t.nameLabel}
+            <input
+              id="user-name"
+              type="text"
+              value={name}
+              placeholder={language === 'ar' ? 'اكتب اسمك' : language === 'de' ? 'Gib deinen Namen ein' : 'Enter your name'}
+              onChange={(event) => handleNameChange(event.target.value)}
+            />
+          </label>
+        </section>
         {/* Kubernetes information */}
 
         <div className="card">
-          <span>Pod Uptime</span>
+          <span>{t.uptime}</span>
           <strong>
             {formatUptime(
               uptimeSeconds
@@ -513,42 +535,42 @@ function App() {
         </div>
 
         <div className="card">
-          <span>Pod IP</span>
+          <span>{t.podIp}</span>
           <strong>
             {clusterConfig.podIp}
           </strong>
         </div>
 
         <div className="card">
-          <span>Namespace</span>
+          <span>{t.namespace}</span>
           <strong>
             {clusterConfig.namespace}
           </strong>
         </div>
 
         <div className="card">
-          <span>Application</span>
+          <span>{t.application}</span>
           <strong>
             {clusterConfig.appName}
           </strong>
         </div>
 
         <div className="card">
-          <span>Pod</span>
+          <span>{t.pod}</span>
           <strong>
             {clusterConfig.podName}
           </strong>
         </div>
 
         <div className="card">
-          <span>Node</span>
+          <span>{t.node}</span>
           <strong>
             {clusterConfig.nodeName}
           </strong>
         </div>
 
         <div className="card">
-          <span>Restart Count</span>
+          <span>{t.restarts}</span>
           <strong>
             {clusterConfig.restartCount}
           </strong>
@@ -558,201 +580,9 @@ function App() {
 
         <div className="card redis-card">
           <span>Redis</span>
-
-          {!redisConnected ? (
-            <strong>
-              Not connected
-            </strong>
-          ) : (
-            <>
-              <strong>
-                Connected
-              </strong>
-
-              <div className="redis-form">
-                <div className="input-row">
-                  <input
-                    type="text"
-                    placeholder="Enter name"
-                    value={name}
-                    onChange={(event) => {
-                      setName(
-                        event.target.value
-                      );
-
-                      setNameChecked(
-                        false
-                      );
-
-                      setFoundMagicNumber(
-                        null
-                      );
-
-                      setMagicNumber(
-                        ''
-                      );
-
-                      setSaved(false);
-
-                      /*
-                       * Clear the old PostgreSQL
-                       * value when the name changes.
-                       */
-                      setBackendMagicValue(
-                        null
-                      );
-
-                      setBackendMagicInput(
-                        ''
-                      );
-
-                      setBackendMagicSaved(
-                        false
-                      );
-                    }}
-                    onKeyDown={(event) => {
-                      if (
-                        event.key ===
-                        'Enter'
-                      ) {
-                        checkName();
-                      }
-                    }}
-                  />
-
-                  <button
-                    type="button"
-                    onClick={
-                      checkName
-                    }
-                    disabled={
-                      !name.trim() ||
-                      checking
-                    }
-                  >
-                    {checking
-                      ? 'Checking...'
-                      : '✓'}
-                  </button>
-                </div>
-
-                {nameChecked &&
-                  foundMagicNumber !==
-                    null && (
-                    <>
-                      <p className="redis-message">
-                        Your magic number is:{' '}
-                        <strong>
-                          {
-                            foundMagicNumber
-                          }
-                        </strong>
-                      </p>
-
-                      <div className="magic-number-form">
-                        <input
-                          type="number"
-                          placeholder="Enter new magic number"
-                          value={
-                            magicNumber
-                          }
-                          onChange={(
-                            event
-                          ) =>
-                            setMagicNumber(
-                              event
-                                .target
-                                .value
-                            )
-                          }
-                          onKeyDown={(
-                            event
-                          ) => {
-                            if (
-                              event.key ===
-                              'Enter'
-                            ) {
-                              saveMagicNumber();
-                            }
-                          }}
-                        />
-
-                        <button
-                          type="button"
-                          onClick={
-                            saveMagicNumber
-                          }
-                          disabled={
-                            !magicNumber.trim() ||
-                            saving
-                          }
-                        >
-                          {saving
-                            ? 'Updating...'
-                            : 'Update'}
-                        </button>
-                      </div>
-                    </>
-                  )}
-
-                {nameChecked &&
-                  foundMagicNumber ===
-                    null &&
-                  !saved && (
-                    <div className="magic-number-form">
-                      <input
-                        type="number"
-                        placeholder="Enter magic number"
-                        value={
-                          magicNumber
-                        }
-                        onChange={(
-                          event
-                        ) =>
-                          setMagicNumber(
-                            event
-                              .target
-                              .value
-                          )
-                        }
-                        onKeyDown={(
-                          event
-                        ) => {
-                          if (
-                            event.key ===
-                            'Enter'
-                          ) {
-                            saveMagicNumber();
-                          }
-                        }}
-                      />
-
-                      <button
-                        type="button"
-                        onClick={
-                          saveMagicNumber
-                        }
-                        disabled={
-                          !magicNumber.trim() ||
-                          saving
-                        }
-                      >
-                        {saving
-                          ? 'Saving...'
-                          : 'Send'}
-                      </button>
-                    </div>
-                  )}
-
-                {saved && (
-                  <p className="redis-success">
-                    ✓ Magic number
-                    updated successfully
-                  </p>
-                )}
-              </div>
-            </>
-          )}
+          <strong className={redisConnected ? 'connection-ok' : 'connection-error'}>
+            {redisConnected ? '● Connected' : '● Not connected'}
+          </strong>
         </div>
 
         {/* Backend */}
