@@ -1,4 +1,63 @@
 
+# ClusterScope
+
+ClusterScope is a Kubernetes learning project built around a realistic cloud-native application. It is designed to make deployment, networking, state, security, scaling, and recovery concepts easy to inspect in one place.
+
+## Start here
+
+### 1. Prepare the cluster
+
+Before installing ClusterScope, make sure the cluster provides:
+
+- Kubernetes and `kubectl` access.
+- Helm 3.
+- A default `StorageClass` for Redis and PostgreSQL persistent volumes.
+- Gateway API CRDs and a Gateway controller, such as Envoy Gateway.
+- A `GatewayClass` named `envoy-gateway-class`, or another class name supplied through Helm values.
+- A TLS Secret named `clusterscope-tls` in the Gateway namespace.
+- A LoadBalancer implementation such as MetalLB when using a local cluster and external access is required.
+
+ClusterScope deploys the application resources; it does not install Gateway API CRDs, Envoy Gateway, MetalLB, or certificate infrastructure.
+
+### 2. Install the application
+
+From the repository root, install the included Helm chart:
+
+```bash
+helm install clusterscope ./helm/clusterscope
+```
+
+Check that the application is ready:
+
+```bash
+kubectl get pods -n clusterscope
+kubectl get gateway,httproute -n clusterscope
+```
+
+To apply chart changes later:
+
+```bash
+helm upgrade clusterscope ./helm/clusterscope
+```
+
+The chart supports single-namespace and multi-namespace installations. See [helm/README.md](helm/README.md) for values, TLS setup, storage, scaling, validation, upgrades, and uninstall instructions.
+
+### 3. Use the dashboard
+
+| Dashboard section | Purpose |
+|---|---|
+| Frontend cards | Display the current frontend Pod's uptime, IP, namespace, application, node, and restart count. |
+| Redis | Shows the frontend connection state to the shared Redis service used for session data. |
+| Backend | Connects to the backend and displays its Pod details when it is available. |
+| PostgreSQL user data | Lets a user save and retrieve a value through the backend; the value is persisted in PostgreSQL. |
+| Language and theme | Provide English, German, and Arabic UI choices and a light/dark presentation mode. |
+
+## Documentation guide
+
+The sections below explain the design in more detail. Start with **Architecture**, then use **Helm** for deployment packaging and **Training Scenarios** for hands-on exercises.
+
+> Argo CD and GitOps deployment documentation will be added in a future update.
+
 ## Overview
 
 **ClusterScope** is a cloud-native application built as a **Kubernetes training and learning platform**.

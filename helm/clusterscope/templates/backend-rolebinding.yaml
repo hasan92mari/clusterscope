@@ -1,0 +1,15 @@
+{{- if .Values.backend.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: clusterscope-backend
+  namespace: {{ include "clusterscope.backendNamespace" . }}
+subjects:
+  - kind: ServiceAccount
+    name: clusterscope-backend
+    namespace: {{ include "clusterscope.backendNamespace" . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: clusterscope-backend
+{{- end }}
