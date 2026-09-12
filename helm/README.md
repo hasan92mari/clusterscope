@@ -181,7 +181,7 @@ kubectl get gatewayclass
 If your cluster uses a different GatewayClass, override it during installation:
 
 ```bash
-helm install clusterscope ./helm/clusterscope \
+helm install clusterscope clusterscope/clusterscope \
   --set gateway.gatewayClassName=<your-gateway-class>
 ```
 
@@ -254,7 +254,7 @@ namespaceMode: single
 Install:
 
 ```bash
-helm install clusterscope ./helm/clusterscope
+helm install clusterscope clusterscope/clusterscope
 ```
 
 This creates:
@@ -292,7 +292,7 @@ The chart can deploy every major component into its own namespace.
 Use:
 
 ```bash
-helm install clusterscope ./helm/clusterscope \
+helm install clusterscope clusterscope/clusterscope \
   --set namespaceMode=multi
 ```
 
@@ -378,7 +378,7 @@ backend:
 Or override them from the command line:
 
 ```bash
-helm upgrade clusterscope ./helm/clusterscope \
+helm upgrade clusterscope clusterscope/clusterscope \
   --set frontend.replicas=3 \
   --set backend.replicas=3
 ```
@@ -448,7 +448,7 @@ postgres:
 You can deploy a specific application image version:
 
 ```bash
-helm upgrade clusterscope ./helm/clusterscope \
+helm upgrade clusterscope clusterscope/clusterscope \
   --set frontend.image.tag=latest-143-f8e91ab
 ```
 
@@ -873,14 +873,14 @@ Environment-specific files override only the values that need to change.
 For example:
 
 ```bash
-helm upgrade --install clusterscope ./helm/clusterscope \
+helm upgrade --install clusterscope clusterscope/clusterscope \
   -f ./helm/clusterscope/values-dev.yaml
 ```
 
 Production:
 
 ```bash
-helm upgrade --install clusterscope ./helm/clusterscope \
+helm upgrade --install clusterscope clusterscope/clusterscope \
   -f ./helm/clusterscope/values-prod.yaml
 ```
 
@@ -891,26 +891,26 @@ helm upgrade --install clusterscope ./helm/clusterscope \
 Before installing the chart, run:
 
 ```bash
-helm lint ./helm/clusterscope
+helm lint clusterscope/clusterscope
 ```
 
 Render the templates without installing:
 
 ```bash
-helm template clusterscope ./helm/clusterscope
+helm template clusterscope clusterscope/clusterscope
 ```
 
 Render the multi-namespace configuration:
 
 ```bash
-helm template clusterscope ./helm/clusterscope \
+helm template clusterscope clusterscope/clusterscope \
   --set namespaceMode=multi
 ```
 
 You can also save the rendered manifests:
 
 ```bash
-helm template clusterscope ./helm/clusterscope \
+helm template clusterscope clusterscope/clusterscope \
   > rendered.yaml
 ```
 
@@ -921,28 +921,28 @@ helm template clusterscope ./helm/clusterscope \
 ### Development
 
 ```bash
-helm upgrade --install clusterscope ./helm/clusterscope \
+helm upgrade --install clusterscope clusterscope/clusterscope \
   -f ./helm/clusterscope/values-dev.yaml
 ```
 
 ### Production
 
 ```bash
-helm upgrade --install clusterscope ./helm/clusterscope \
+helm upgrade --install clusterscope clusterscope/clusterscope \
   -f ./helm/clusterscope/values-prod.yaml
 ```
 
 ### Multi Namespace
 
 ```bash
-helm upgrade --install clusterscope ./helm/clusterscope \
+helm upgrade --install clusterscope clusterscope/clusterscope \
   --set namespaceMode=multi
 ```
 
 ### Custom Replica Counts
 
 ```bash
-helm upgrade --install clusterscope ./helm/clusterscope \
+helm upgrade --install clusterscope clusterscope/clusterscope \
   --set frontend.replicas=2 \
   --set backend.replicas=2
 ```
@@ -954,7 +954,7 @@ helm upgrade --install clusterscope ./helm/clusterscope \
 After changing the chart or values:
 
 ```bash
-helm upgrade clusterscope ./helm/clusterscope
+helm upgrade clusterscope clusterscope/clusterscope
 ```
 
 Check the release:

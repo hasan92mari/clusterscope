@@ -29,6 +29,19 @@ jobs:
           git config user.name "$GITHUB_ACTOR"
           git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
 
+    #   - name: Ensure gh-pages branch exists
+    #     run: |
+    #       git fetch origin
+    #       if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+    #         echo "gh-pages branch already exists"
+    #       else
+    #         git checkout --orphan gh-pages
+    #         git rm -rf . || true
+    #         git commit --allow-empty -m "Initialize gh-pages"
+    #         git push origin gh-pages
+    #         git checkout "${GITHUB_REF_NAME:-main}"
+    #       fi
+
       - name: Package and publish Helm chart
         uses: helm/chart-releaser-action@v1.7.0
         with:
@@ -36,4 +49,4 @@ jobs:
           pages_branch: gh-pages
           mark_as_latest: true
         env:
-          CR_TOKEN: "${{ secrets.GHCR_TOKEN }}"
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
