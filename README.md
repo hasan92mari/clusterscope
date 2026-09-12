@@ -612,7 +612,7 @@ kubectl get events
 Modify values and upgrade the application:
 
 ```bash
-helm upgrade clusterscope ./helm/clusterscope
+helm upgrade clusterscope clusterscope/clusterscope
 ```
 
 These scenarios turn the project into a practical Kubernetes playground rather than simply a static demonstration.
