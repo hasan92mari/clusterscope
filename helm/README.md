@@ -19,20 +19,14 @@ The chart does not install these cluster-level prerequisites.
 
 ### Install and verify
 
-Run these commands from the repository root:
-
-```bash
-helm install clusterscope ./helm/clusterscope
-kubectl get pods -n clusterscope
-kubectl get gateway,httproute -n clusterscope
-```
-
-If you want to install the published chart from the GitHub Pages repository, first publish the chart by pushing to `main`, then run:
+Add the published Helm repository and install the chart from it:
 
 ```bash
 helm repo add clusterscope https://hasan92mari.github.io/clusterscope
 helm repo update
 helm install clusterscope clusterscope/clusterscope
+kubectl get pods -n clusterscope
+kubectl get gateway,httproute -n clusterscope
 ```
 
 > The repository URL is the GitHub Pages URL for this repo, for example `https://hasan92mari.github.io/clusterscope`.
@@ -40,13 +34,13 @@ helm install clusterscope clusterscope/clusterscope
 Upgrade an existing release after changing values or templates:
 
 ```bash
-helm upgrade clusterscope ./helm/clusterscope
+helm upgrade clusterscope clusterscope/clusterscope
 ```
 
 Before installing, inspect the defaults if needed:
 
 ```bash
-helm show values ./helm/clusterscope
+helm show values clusterscope/clusterscope
 ```
 
 ### Chart at a glance

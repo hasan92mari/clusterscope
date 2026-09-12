@@ -21,10 +21,12 @@ ClusterScope deploys the application resources; it does not install Gateway API 
 
 ### 2. Install the application
 
-From the repository root, install the included Helm chart:
+Add the published Helm repository and install the chart from it:
 
 ```bash
-helm install clusterscope ./helm/clusterscope
+helm repo add clusterscope https://hasan92mari.github.io/clusterscope
+helm repo update
+helm install clusterscope clusterscope/clusterscope
 ```
 
 Check that the application is ready:
@@ -37,7 +39,7 @@ kubectl get gateway,httproute -n clusterscope
 To apply chart changes later:
 
 ```bash
-helm upgrade clusterscope ./helm/clusterscope
+helm upgrade clusterscope clusterscope/clusterscope
 ```
 
 The chart supports single-namespace and multi-namespace installations. See [helm/README.md](helm/README.md) for values, TLS setup, storage, scaling, validation, upgrades, and uninstall instructions.
