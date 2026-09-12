@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: clusterscope-app-frontend
+  namespace: argocd
+spec:
+  project: clusterscope-project
+  source:
+    repoURL: https://github.com/hasan92mari/clusterscope.git
+    targetRevision: HEAD
+    path: argo/frontend
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: clusterscope-frontend
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
