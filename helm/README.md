@@ -27,6 +27,16 @@ kubectl get pods -n clusterscope
 kubectl get gateway,httproute -n clusterscope
 ```
 
+If you want to install the published chart from the GitHub Pages repository, first publish the chart by pushing to `main`, then run:
+
+```bash
+helm repo add clusterscope https://hasan92mari.github.io/clusterscope
+helm repo update
+helm install clusterscope clusterscope/clusterscope
+```
+
+> The repository URL is the GitHub Pages URL for this repo, for example `https://hasan92mari.github.io/clusterscope`.
+
 Upgrade an existing release after changing values or templates:
 
 ```bash
