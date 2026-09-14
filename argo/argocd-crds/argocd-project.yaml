@@ -18,12 +18,22 @@ spec:
       kind: Deployment
     - group: apps
       kind: StatefulSet
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
     - group: ""
       kind: Service
     - group: ""
       kind: ConfigMap
     - group: ""
       kind: Secret
+    - group: ""
+      kind: ServiceAccount
+    - group: ""
+      kind: LimitRange
+    - group: ""
+      kind: ResourceQuota
+    - group: networking.k8s.io
+      kind: NetworkPolicy
     - group: "rbac.authorization.k8s.io"
       kind: Role
     - group: "rbac.authorization.k8s.io"

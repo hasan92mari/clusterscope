@@ -2,8 +2,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: clusterscope-frontend
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
 spec:
-  replicas: 1
   selector:
     matchLabels:
       app: clusterscope-frontend

@@ -18,3 +18,11 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      # - ServerSideApply=true
+      # - ApplyOutOfSyncOnly=true
+  # ignoreDifferences:
+  #   - group: apps
+  #     kind: Deployment
+  #     name: clusterscope-frontend
+  #     jsonPointers:
+  #       - /spec/replicas

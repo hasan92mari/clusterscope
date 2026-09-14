@@ -5,7 +5,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: clusterscope-backend
-    namespace: clusterscope
+    namespace: clusterscope-backend
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
