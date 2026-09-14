@@ -13,7 +13,10 @@ spec:
     - Egress
   ingress:
     - from:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: clusterscope-frontend
+          podSelector:
             matchLabels:
               app: clusterscope-frontend
       ports:
@@ -30,6 +33,12 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    # - to:
+    #   - ipBlock:
+    #       cidr: 10.96.0.1/32 # 'kubernetes' service cluster IP
+    - ports:
+      - protocol: TCP
+        port: 443
     - to:
         - namespaceSelector:
             matchLabels:

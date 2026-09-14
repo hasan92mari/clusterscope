@@ -9,5 +9,5 @@ spec:
     pods: "3"
     requests.cpu: "300m"
     requests.memory: "384Mi"
-    limits.cpu: "1,5"
+    limits.cpu: "1500m"
     limits.memory: "1536Mi"
