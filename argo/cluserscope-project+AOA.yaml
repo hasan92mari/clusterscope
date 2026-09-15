@@ -66,6 +66,8 @@ kind: Application
 metadata:
   name: clusterscope-app-of-apps
   namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   source:
@@ -80,6 +82,4 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      - ServerSideApply=true
-      - ApplyOutOfSyncOnly=true
       - PruneLast=true
