@@ -1,51 +1,41 @@
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
 metadata:
-  name: clusterscope-frontend-netpol
+  name: clusterscope-frontend-cnp
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 spec:
-  podSelector:
+  endpointSelector:
     matchLabels:
       app: clusterscope-frontend
-  policyTypes:
-    - Egress
   egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: clusterscope-backend
-          podSelector:
-            matchLabels:
-              app: clusterscope-backend
-      ports:
-        - protocol: TCP
-          port: 8000
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: clusterscope-redis
-          podSelector:
-            matchLabels:
-              app: clusterscope-redis
-      ports:
-        - protocol: TCP
-          port: 6379
-    - to:
-      - ipBlock:
-          cidr: 192.168.64.13/32  # 'kubernetes' service cluster IP endpoint
-      ports:
-        - protocol: TCP
-          port: 6443
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": clusterscope-backend
+            "k8s:app": clusterscope-backend
+      toPorts:
+        - ports:
+            - protocol: TCP
+              port: "8000"
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": clusterscope-redis
+            "k8s:app": clusterscope-redis
+      toPorts:
+        - ports:
+            - protocol: TCP
+              port: "6379"
+    - toEntities:
+        - kube-apiserver
+    - toEntities:
+        - world
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            "k8s:k8s-app": kube-dns
+      toPorts:
+        - ports:
+            - protocol: UDP
+              port: "53"
+            - protocol: TCP
+              port: "53"

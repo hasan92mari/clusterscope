@@ -1,37 +1,30 @@
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
 metadata:
-  name: clusterscope-redis-netpol
+  name: clusterscope-redis-cnp
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 spec:
-  podSelector:
+  endpointSelector:
     matchLabels:
       app: clusterscope-redis
-  policyTypes:
-    - Ingress
-    - Egress
   ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: clusterscope-frontend
-          podSelector:
-            matchLabels:
-              app: clusterscope-frontend
-      ports:
-        - protocol: TCP
-          port: 6379
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": clusterscope-frontend
+            "k8s:app": clusterscope-frontend
+      toPorts:
+        - ports:
+            - protocol: TCP
+              port: "6379"
   egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            "k8s:k8s-app": kube-dns
+      toPorts:
+        - ports:
+            - protocol: UDP
+              port: "53"
+            - protocol: TCP
+              port: "53"
