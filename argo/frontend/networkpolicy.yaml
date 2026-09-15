@@ -31,12 +31,12 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
-    # - to:
-    #   - ipBlock:
-    #       cidr: 10.96.0.1/32 # 'kubernetes' service cluster IP
-    - ports:
-      - protocol: TCP
-        port: 443
+    - to:
+      - ipBlock:
+          cidr: 192.168.64.13/32  # 'kubernetes' service cluster IP endpoint
+      ports:
+        - protocol: TCP
+          port: 6443
     - to:
         - namespaceSelector:
             matchLabels:
