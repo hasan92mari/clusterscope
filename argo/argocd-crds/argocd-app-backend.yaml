@@ -18,8 +18,9 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      # - ServerSideApply=true
-      # - ApplyOutOfSyncOnly=true
+      - ServerSideApply=true
+      - ApplyOutOfSyncOnly=true
+      - PruneLast=true
   ignoreDifferences:
     - group: apps
       kind: Deployment
