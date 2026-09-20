@@ -26,4 +26,4 @@ dist-ssr
 .env 
 .git
 
-k8s/gateway/tls-secret.yaml
+argo/frontend/tls-secret.yaml

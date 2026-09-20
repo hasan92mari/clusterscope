@@ -1,0 +1,42 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: clusterscope-backend-cnp
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  endpointSelector:
+    matchLabels:
+      app: clusterscope-backend
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": clusterscope-frontend
+            "k8s:app": clusterscope-frontend
+      toPorts:
+        - ports:
+            - protocol: TCP
+              port: "8000"
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": clusterscope-postgres
+            "k8s:app": clusterscope-postgres
+      toPorts:
+        - ports:
+            - protocol: TCP
+              port: "5432"
+    - toEntities:
+        - kube-apiserver
+    - toEntities:
+        - world
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            "k8s:k8s-app": kube-dns
+      toPorts:
+        - ports:
+            - protocol: UDP
+              port: "53"
+            - protocol: TCP
+              port: "53"

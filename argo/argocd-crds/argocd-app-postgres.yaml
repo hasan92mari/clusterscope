@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: clusterscope-app-postgres
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: clusterscope-project
+  source:
+    repoURL: https://github.com/hasan92mari/clusterscope.git
+    targetRevision: feat/add-argocd-crds
+    path: argo/postgres
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: clusterscope-postgres
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+      - PruneLast=true

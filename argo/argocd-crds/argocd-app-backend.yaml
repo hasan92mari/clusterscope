@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: clusterscope-app-backend
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: clusterscope-project
+  source:
+    repoURL: https://github.com/hasan92mari/clusterscope.git
+    targetRevision: feat/add-argocd-crds
+    path: argo/backend
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: clusterscope-backend
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+      - PruneLast=true
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: clusterscope-backend
+      jsonPointers:
+        - /spec/replicas

@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: clusterscope-app-redis
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: clusterscope-project
+  source:
+    repoURL: https://github.com/hasan92mari/clusterscope.git
+    targetRevision: feat/add-argocd-crds
+    path: argo/redis
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: clusterscope-redis
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+      - PruneLast=true
