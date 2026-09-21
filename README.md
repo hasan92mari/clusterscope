@@ -11,7 +11,7 @@ Before installing ClusterScope, make sure the cluster provides:
 
 - Kubernetes and `kubectl` access.
 - Helm 3.
-- A default `StorageClass` for Redis and PostgreSQL persistent volumes.
+- A `local-path` `StorageClass` for the default Redis and PostgreSQL persistent volumes, or custom `redis.storageClassName` and `postgres.storageClassName` Helm values.
 - Gateway API CRDs and a Gateway controller, such as Envoy Gateway.
 - A `GatewayClass` named `envoy-gateway-class`, or another class name supplied through Helm values.
 - A TLS Secret named `clusterscope-tls` in the Gateway namespace.
@@ -44,7 +44,19 @@ helm upgrade clusterscope clusterscope/clusterscope
 
 The chart supports single-namespace and multi-namespace installations. See [helm/README.md](helm/README.md) for values, TLS setup, storage, scaling, validation, upgrades, and uninstall instructions.
 
-### 3. Use the dashboard
+> The default image tags and Redis/PostgreSQL credentials are intended for local learning only. Pin image versions and provide credentials through a secure secret-management workflow before using this outside a training environment.
+
+### 3. Deploy with Argo CD (GitOps)
+
+As an alternative to Helm, install the Argo CD project and ApplicationSet:
+
+```bash
+kubectl apply -f argo/appset+project.yaml
+```
+
+The ApplicationSet creates one Application for each component directory under `argo/`, excluding the Argo CD bootstrap manifests. Do not manage the same workloads with Helm and Argo CD at the same time.
+
+### 4. Use the dashboard
 
 | Dashboard section | Purpose |
 |---|---|
@@ -56,9 +68,7 @@ The chart supports single-namespace and multi-namespace installations. See [helm
 
 ## Documentation guide
 
-The sections below explain the design in more detail. Start with **Architecture**, then use **Helm** for deployment packaging and **Training Scenarios** for hands-on exercises.
-
-> Argo CD and GitOps deployment documentation will be added in a future update.
+The sections below explain the design in more detail. Start with **Architecture**, choose either **Helm** or **Argo CD** for deployment, then use **Training Scenarios** for hands-on exercises.
 
 ## Overview
 
@@ -485,6 +495,12 @@ backend:
 
 The same chart can therefore be used with different configurations for development, testing, or other environments.
 
+## Argo CD and GitOps
+
+The `argo/appset+project.yaml` manifest defines an `AppProject` and an `ApplicationSet`. Its Matrix generator combines the component directories with the selected environment branches, creating separately managed Argo CD Applications.
+
+Use this deployment path when Argo CD should reconcile the repository continuously. It is an alternative to Helm-based release management for the same workloads.
+
 ---
 
 ## Infrastructure and Application Separation
@@ -630,16 +646,16 @@ A production deployment would require additional considerations, including:
 - Automated database backups
 - Disaster recovery
 - Production-grade secret management
-- NetworkPolicies
 - Monitoring and observability
 - Centralized logging
-- Autoscaling
 - Production TLS certificate management
 - Multi-node failure testing
 - Backup and restore procedures
 - Proper database replication
 
-The current storage configuration, including `hostPath`, is intended for local development and learning rather than production use.
+The default storage class is `local-path`, which is intended for local development and learning rather than production use. Production deployments should use storage appropriate to their availability and durability requirements.
+
+The raw manifests in `argo/` include Cilium network policies and HorizontalPodAutoscalers for the application workloads. The Helm chart does not currently template these resources, so production Helm deployments should add equivalent policy and autoscaling configuration.
 
 ---
 
@@ -680,5 +696,3 @@ Learners can use the project to understand how:
 - Gateway API manages external traffic.
 - Helm packages and manages Kubernetes applications.
 The project is ultimately designed as a **hands-on Kubernetes playground** where learners can deploy, inspect, modify, scale, troubleshoot, break, recover, and experiment with a complete cloud-native application.
-
-'''
