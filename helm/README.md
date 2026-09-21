@@ -9,7 +9,7 @@ This page is the practical reference for deploying ClusterScope with Helm. The d
 Prepare the following before installing the chart:
 
 - Helm 3 and access to a Kubernetes cluster.
-- A default `StorageClass` for Redis and PostgreSQL PVCs.
+- A `local-path` `StorageClass` for the default Redis and PostgreSQL PVCs, or custom `redis.storageClassName` and `postgres.storageClassName` values.
 - Gateway API CRDs and an installed Gateway controller, such as Envoy Gateway.
 - An existing `GatewayClass`; the default is `envoy-gateway-class`.
 - A TLS Secret named `clusterscope-tls` in the Gateway namespace.
@@ -66,7 +66,7 @@ helm show values clusterscope/clusterscope
 
 For a first installation, read **Requirements**, **GatewayClass**, **TLS / HTTPS**, and **Installation** in that order. Use **Configuration**, **Secrets**, **Storage**, and **Scaling** when adapting the deployment. The final sections cover validation, upgrades, removal, and chart structure.
 
-> Argo CD and GitOps deployment guidance will be added in a future update.
+> For the Argo CD / GitOps deployment path, see the [root README](../README.md#argo-cd-and-gitops). Do not use Helm and Argo CD to manage the same workloads at the same time.
 
 Helm chart for deploying the ClusterScope application on Kubernetes.
 
@@ -543,7 +543,7 @@ Example:
 redis:
   storage:
     size: 1Gi
-    hostPath: /tmp/clusterscope-redis-data
+  storageClassName: local-path
 ```
 
 Redis uses:
@@ -568,9 +568,7 @@ Example:
 postgres:
   storage:
     size: 1Gi
-    hostPath: /data/clusterscope-postgres
-
-  storageClassName: manual
+  storageClassName: local-path
 ```
 
 PostgreSQL stores its data under:
@@ -589,34 +587,13 @@ for the database volume.
 
 `ReadWriteOnce` means that the volume can be mounted read/write by workloads on a single node at a time. It is not permanently tied to one Pod.
 
-The PostgreSQL PersistentVolume uses:
-
-```yaml
-persistentVolumeReclaimPolicy: Retain
-```
-
-so the underlying data is retained when the associated PVC/PV lifecycle changes.
-
 ---
 
-## Important: hostPath Storage
+## Important: Local Development Storage
 
-The chart uses `hostPath` because it is intended primarily for local Kubernetes development.
+The default `local-path` StorageClass is intended primarily for local Kubernetes development. Its data is typically node-local, so it is not suitable for highly available production storage.
 
-For example:
-
-```yaml
-hostPath:
-  path: /data/clusterscope-postgres
-```
-
-This means the data physically exists on a Kubernetes node.
-
-If a Pod moves to another node, the new node may not contain the same data directory.
-
-Therefore, `hostPath` is **not recommended for production**.
-
-For production Kubernetes environments, use a proper StorageClass and dynamic persistent volumes.
+For production Kubernetes environments, set `redis.storageClassName` and `postgres.storageClassName` to StorageClasses that meet your durability, backup, and availability requirements.
 
 ---
 
@@ -979,9 +956,7 @@ Remove the Helm release:
 helm uninstall clusterscope
 ```
 
-> Persistent data may remain because persistent storage uses a `Retain` policy and/or underlying hostPath storage.
-
-If you want to completely remove local development data, remove the corresponding directories from the Kubernetes node manually.
+> Persistent data can remain after uninstall, depending on the reclaim policy configured by the selected StorageClass. Inspect and remove the PVCs only if deleting the data is intended.
 
 ---
 
