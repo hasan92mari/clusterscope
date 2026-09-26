@@ -5,4 +5,4 @@ metadata:
   namespace: clusterscope-frontend
 spec:
   associations:
-    - f6fdc80d-8052-4fc0-beb7-aa97e27e4913
+    - /subscriptions/4a63a39d-cb27-48c4-88f2-0c33a4b9dfdb/resourceGroups/MC_aks_cluster1-aks_eastus/providers/Microsoft.Network/virtualNetworks/aks-vnet-17547948/subnets/aks-appgateway
