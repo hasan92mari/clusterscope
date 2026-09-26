@@ -2,6 +2,9 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
   name: clusterscope-gateway
+  annotations:
+    alb.networking.azure.io/alb-name: clusterscope-alb
+    alb.networking.azure.io/alb-namespace: clusterscope-frontend
 spec:
   gatewayClassName: azure-alb-external
   listeners:

@@ -1,0 +1,8 @@
+apiVersion: alb.networking.azure.io/v1
+kind: ApplicationLoadBalancer
+metadata:
+  name: clusterscope-alb
+  namespace: clusterscope-frontend
+spec:
+  associations:
+    - f6fdc80d-8052-4fc0-beb7-aa97e27e4913
