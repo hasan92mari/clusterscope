@@ -26,4 +26,4 @@ dist-ssr
 .env 
 .git
 
-argo/frontend/tls-secret.yaml
+
