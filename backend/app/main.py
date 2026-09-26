@@ -16,11 +16,16 @@ app = FastAPI(
     version="0.1.0",
 )
 
+database_initialized = False
+
 
 @app.on_event("startup")
 def create_tables() -> None:
+    global database_initialized
+
     try:
         Base.metadata.create_all(bind=engine)
+        database_initialized = True
         print("Database connected and tables initialized.")
     except Exception as error:
         print(f"Database unavailable: {error}")
@@ -79,9 +84,15 @@ def healthz() -> dict[str, str]:
 
 @app.get("/readyz")
 def readyz() -> dict[str, str]:
+    global database_initialized
+
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
+
+        if not database_initialized:
+            Base.metadata.create_all(bind=engine)
+            database_initialized = True
 
         return {"status": "ready"}
 
