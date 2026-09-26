@@ -83,10 +83,10 @@ spec:
                   exclude: true
           - list:
               elements:
-                - Name: prod
-                  branch: main
-                # - Name: dev
-                #   branch: feat/add-argocd-crds
+                # - Name: prod
+                #   branch: main
+                - Name: dev-aks
+                  branch: azure-aks
   template:
     metadata:
       name: 'clusterscope-{{.Name}}-{{.path.basename}}'
