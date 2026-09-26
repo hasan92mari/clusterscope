@@ -26,4 +26,26 @@ dist-ssr
 .env 
 .git
 
+# Terraform working directory and downloaded providers
+**/.terraform/
+
+# Local state and plans
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# Local variable files may contain credentials or environment-specific values
+**/terraform.tfvars
+**/*.auto.tfvars
+**/*.auto.tfvars.json
+
+# Terraform CLI configuration and override files
+.terraformrc
+terraform.rc
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
 
