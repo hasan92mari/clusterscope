@@ -199,6 +199,6 @@ output "aks_get_credentials_command" {
 
 output "argocd_admin_password_command" {
   description = "Run this command after retrieving AKS credentials to read the initial Argo CD admin password."
-  value       = "kubectl get secret argocd-initial-admin-secret -n argocd --template='{{index .data \"password\" | base64decode}}'"
+  value       = "kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
   depends_on  = [module.argocd_extension]
 }
