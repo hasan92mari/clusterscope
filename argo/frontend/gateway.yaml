@@ -3,7 +3,7 @@ kind: Gateway
 metadata:
   name: clusterscope-gateway
 spec:
-  gatewayClassName: envoy-gateway-class
+  gatewayClassName: azure-alb-external
   listeners:
     - name: https
       protocol: HTTPS
