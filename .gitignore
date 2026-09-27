@@ -27,3 +27,26 @@ dist-ssr
 .git
 
 argo/frontend/tls-secret.yaml
+
+# Terraform working directories and downloaded providers (including nested modules)
+**/.terraform/
+
+# Terraform state, plans, and crash logs
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# Local Terraform variables may contain credentials or environment-specific values
+terraform.tfvars
+*.auto.tfvars
+*.auto.tfvars.json
+
+# Terraform CLI configuration and local overrides
+.terraformrc
+terraform.rc
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
