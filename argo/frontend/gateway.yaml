@@ -2,17 +2,18 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
   name: clusterscope-gateway
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
-  gatewayClassName: envoy-gateway-class
+  gatewayClassName: aws-alb
   listeners:
     - name: https
       protocol: HTTPS
       port: 443
-      hostname: clusterscope.com
       tls:
         mode: Terminate
-        certificateRefs:
-          - name: clusterscope-tls
+        options:
+          gateway.k8s.aws/certificate-source: LoadBalancerConfiguration
       allowedRoutes:
         namespaces:
           from: Same

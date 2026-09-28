@@ -23,3 +23,13 @@ output "node_egress_nat_public_ip" {
   description = "Static public IPv4 address used for outbound connections from the EKS node subnets."
   value       = aws_eip.node_egress_nat.public_ip
 }
+
+output "aws_load_balancer_controller_role_arn" {
+  description = "Pod Identity role used by AWS Load Balancer Controller."
+  value       = aws_iam_role.load_balancer_controller.arn
+}
+
+output "alb_demo_certificate_arn" {
+  description = "ACM ARN of the self-signed TLS certificate used by the ALB demo Gateway."
+  value       = aws_acm_certificate.alb_demo.arn
+}

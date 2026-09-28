@@ -34,6 +34,18 @@ variable "nat_public_subnet_id" {
   default     = "subnet-092f108598671044e"
 }
 
+variable "alb_public_subnet_ids" {
+  description = "Existing public subnets in at least two Availability Zones for internet-facing Application Load Balancers."
+  type        = list(string)
+  default     = ["subnet-092f108598671044e", "subnet-0860d352f1ad21cbe"]
+}
+
+variable "aws_cli_path" {
+  description = "Path to the AWS CLI binary used by the Kubernetes and Helm providers to authenticate to EKS."
+  type        = string
+  default     = "/Users/hasanmariam/.local/share/aws-cli/aws"
+}
+
 variable "cluster_role_arn" {
   description = "Existing EKS Auto Mode cluster IAM role ARN. The role must have the required Auto Mode policies attached."
   type        = string

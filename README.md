@@ -14,7 +14,7 @@ Before installing ClusterScope, make sure the cluster provides:
 - For the raw Argo CD manifests, a `gp2` `StorageClass` and the AWS EBS CSI add-on. The Helm chart defaults to `local-path`; set custom `redis.storageClassName` and `postgres.storageClassName` values when using it on EKS.
 - Gateway API CRDs and a Gateway controller, such as Envoy Gateway.
 - A `GatewayClass` named `envoy-gateway-class`, or another class name supplied through Helm values.
-- A TLS Secret named `clusterscope-tls` in the Gateway namespace.
+- A TLS Secret for the Helm chart's HTTPS listener. The EKS AWS Load Balancer Controller path uses an ACM certificate instead.
 - A LoadBalancer implementation such as MetalLB when using a local cluster and external access is required.
 
 ClusterScope deploys the application resources; it does not install Gateway API CRDs, Envoy Gateway, MetalLB, or certificate infrastructure.
@@ -410,8 +410,7 @@ Frontend Pod
 
 ```
 
-TLS is terminated at the Gateway.
-The HTTPRoute then forwards traffic to the Frontend Service.
+TLS is terminated at the Gateway, and the HTTPRoute forwards traffic to the Frontend Service. For the EKS ALB path, the certificate is self-signed and clients will display a warning.
 This provides practical experience with:
 - Gateway API
 - Gateway resources

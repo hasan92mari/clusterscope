@@ -174,6 +174,22 @@ resource "aws_route" "node_default_egress" {
   nat_gateway_id         = aws_nat_gateway.node_egress.id
 }
 
+# ALB subnet auto-discovery uses this role tag for internet-facing load balancers.
+# These are existing public subnets and are not otherwise managed by this stack.
+resource "aws_ec2_tag" "alb_public_subnet_role" {
+  for_each    = toset(var.alb_public_subnet_ids)
+  resource_id = each.value
+  key         = "kubernetes.io/role/elb"
+  value       = "1"
+}
+
+resource "aws_ec2_tag" "alb_public_subnet_cluster" {
+  for_each    = toset(var.alb_public_subnet_ids)
+  resource_id = each.value
+  key         = "kubernetes.io/cluster/${var.cluster_name}"
+  value       = "shared"
+}
+
 # Interface endpoints keep AWS service traffic private; the S3 gateway
 # endpoint remains associated with the node subnets' route tables.
 resource "aws_vpc_endpoint" "node_services" {

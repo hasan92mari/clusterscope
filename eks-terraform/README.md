@@ -8,6 +8,7 @@ This Terraform configuration manages `cluster1-eks` in `eu-north-1` with Kuberne
 - The VPC, both node subnets, and the NAT public subnet must already exist in `eu-north-1`. The NAT subnet must share the VPC and have a default route to an Internet Gateway; Terraform checks these conditions.
 - The existing cluster, EBS CSI, and VPC CNI IAM roles must exist. The cluster role needs `AmazonEKSClusterPolicy`; the Pod Identity roles must trust `pods.eks.amazonaws.com` and have the add-on policies.
 - The managed node group role is created by Terraform with `AmazonEKSWorkerNodePolicy` and `AmazonEC2ContainerRegistryPullOnly`.
+- Terraform creates an IAM policy and Pod Identity role for AWS Load Balancer Controller, associates that role with the `kube-system/aws-load-balancer-controller` service account, tags the two existing public subnets for internet-facing ALB discovery, and installs chart `1.14.0` (controller `v2.14.1`) with the ALB Gateway API feature enabled using the local Helm CLI. The public subnet IDs must be in at least two Availability Zones and have a route to an Internet Gateway.
 - Standard managed node groups need the `eks-pod-identity-agent` add-on for the EBS CSI and VPC CNI Pod Identity associations. Terraform installs this add-on and lets EKS choose a version compatible with the cluster Kubernetes version; Auto Mode had supplied the agent automatically.
 - The configured node subnets are isolated. Terraform creates one public NAT Gateway in `nat_public_subnet_id` and routes the node subnets' route tables through it, allowing nodes to pull images from public registries. The current default NAT subnet is `subnet-092f108598671044e` in `eu-north-1a`; the single NAT is shared by nodes in both Availability Zones. The existing S3 gateway endpoint remains associated with the node subnets' route tables.
 - NAT Gateways incur hourly, public IPv4, and data processing charges; traffic from another Availability Zone can also incur cross-AZ charges. This configuration uses one NAT Gateway to limit fixed costs, so egress depends on its Availability Zone. Terraform also creates interface endpoints for ECR API, ECR Docker, EC2, and EKS Auth; those endpoints incur hourly and data processing charges. Review all of these resources in `terraform plan` before applying. The existing S3 gateway endpoint is not managed by this configuration.
@@ -32,7 +33,17 @@ The account, role ARNs, VPC, subnet IDs, add-on versions, and API allowlist are 
 
 ## Use
 
-Review or override the defaults in a local `terraform.tfvars` file (Terraform ignores this file in Git), then run:
+Before applying Terraform for the first time, make sure the AWS CLI and `kubectl` are installed, configure `kubectl` for this cluster, and install the standard Gateway API CRDs and the matching AWS Load Balancer Controller Gateway CRDs. Terraform manages the controller with the Helm provider and its custom resources with the Kubernetes provider, so these CRDs must already exist:
+
+```sh
+aws eks update-kubeconfig --region eu-north-1 --name cluster1-eks
+kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.14.1/config/crd/gateway/gateway-crds.yaml
+```
+
+Terraform creates the `clusterscope-frontend` namespace before applying the controller's namespaced configuration, and intentionally leaves the namespace in place on `terraform destroy` to avoid deleting application workloads and data.
+
+Review or override the defaults in a local `terraform.tfvars` file (Terraform ignores this file in Git). `aws_cli_path` defaults to the AWS CLI binary path found on this Mac (`/Users/hasanmariam/.local/share/aws-cli/aws`); change it if you run Terraform on another machine. Then run:
 
 ```sh
 terraform init
@@ -40,7 +51,18 @@ terraform plan
 terraform apply
 ```
 
-The configuration manages the cluster, the managed node group and its node IAM role, the NAT Gateway and node routes, the add-ons, and the Argo CD capability. It does not create the VPC, subnets, Internet Gateway, cluster IAM role, Pod Identity roles/policies, or the pre-existing Argo CD capability role. The `vpc_id` and subnet IDs shown in the request are account-specific and can only work if those resources are present in the AWS account and region selected.
+The configuration manages the cluster, the managed node group and its node IAM role, the NAT Gateway and node routes, add-ons, the AWS Load Balancer Controller role and Helm release, its GatewayClass and ALB configuration, the ACM demo certificate, and the Argo CD capability. It does not create the VPC, subnets, Internet Gateway, cluster IAM role, EBS/VPC CNI Pod Identity roles, or the pre-existing Argo CD capability role. Terraform adds the ALB role and cluster-discovery tags to the existing public subnets; destroying this stack removes those tags. The `vpc_id` and subnet IDs shown in the request are account-specific and can only work if those resources are present in the AWS account and region selected.
+
+The frontend Gateway is configured as an internet-facing ALB with IP targets and HTTPS on port 443, without a hostname restriction. Terraform generates a self-signed certificate and imports it into ACM, then configures the ALB GatewayClass to use it. Use `https://<alb-hostname>/` to connect. Because the certificate is self-signed and has no SAN matching the AWS-generated hostname, browsers will show a certificate warning; `curl -k https://<alb-hostname>/` can be used to demonstrate that the TLS endpoint responds. Terraform stores the generated private key in its state, so protect that state and use this certificate only for a demo. A trusted HTTPS endpoint requires a hostname and a publicly trusted certificate. The AWS Load Balancer Controller's Gateway API support currently has documented conformance/support gaps and is not recommended by its maintainers for production workloads yet; review this limitation before relying on it for production.
+
+After Terraform and Argo CD sync, verify with:
+
+```sh
+kubectl -n kube-system get deployment aws-load-balancer-controller
+kubectl get gatewayclass aws-alb
+kubectl -n clusterscope-frontend get gateway clusterscope-gateway -o wide
+kubectl -n clusterscope-frontend describe gateway clusterscope-gateway
+```
 
 The EC2 Free Tier or account credits may cover eligible `t3.small` instance usage depending on account age and plan, but they do not make EKS itself free. EKS standard support is billed at $0.10 per cluster-hour, with EBS, public IPv4, and network charges billed separately where applicable. Check AWS Billing for the account's actual credits and usage.
 

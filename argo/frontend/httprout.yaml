@@ -6,8 +6,6 @@ spec:
   parentRefs:
     - name: clusterscope-gateway
       sectionName: https
-  hostnames:
-    - clusterscope.com
   rules:
     - matches:
         - path:
