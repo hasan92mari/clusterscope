@@ -11,7 +11,7 @@ Before installing ClusterScope, make sure the cluster provides:
 
 - Kubernetes and `kubectl` access.
 - Helm 3.
-- A `local-path` `StorageClass` for the default Redis and PostgreSQL persistent volumes, or custom `redis.storageClassName` and `postgres.storageClassName` Helm values.
+- For the raw Argo CD manifests, a `gp2` `StorageClass` and the AWS EBS CSI add-on. The Helm chart defaults to `local-path`; set custom `redis.storageClassName` and `postgres.storageClassName` values when using it on EKS.
 - Gateway API CRDs and a Gateway controller, such as Envoy Gateway.
 - A `GatewayClass` named `envoy-gateway-class`, or another class name supplied through Helm values.
 - A TLS Secret named `clusterscope-tls` in the Gateway namespace.
@@ -654,7 +654,7 @@ A production deployment would require additional considerations, including:
 - Backup and restore procedures
 - Proper database replication
 
-The default storage class is `local-path`, which is intended for local development and learning rather than production use. Production deployments should use storage appropriate to their availability and durability requirements.
+The Helm chart defaults to `local-path`, which is intended for local development and learning rather than production use. The raw Argo CD manifests use the EKS `gp2` StorageClass. Production deployments should use storage appropriate to their availability and durability requirements.
 
 The raw manifests in `argo/` include Kubernetes NetworkPolicies and HorizontalPodAutoscalers for the application workloads. EKS applies these policies through the Amazon VPC CNI network policy feature, which is enabled by `eks-terraform`. The frontend and backend retain broad outbound access to preserve the former Cilium `world` and `kube-apiserver` egress rules; Redis and PostgreSQL allow DNS egress and accept application traffic only from their respective callers. The Helm chart does not currently template these resources, so Helm deployments should add equivalent policy and autoscaling configuration.
 
