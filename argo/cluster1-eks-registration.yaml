@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cluster1-eks
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: cluster
+type: Opaque
+stringData:
+  name: cluster1-eks
+  server: arn:aws:eks:eu-north-1:992189742733:cluster/cluster1-eks
+  project: default

@@ -12,7 +12,7 @@ spec:
     targetRevision: feat/add-argocd-crds
     path: argo/redis
   destination:
-    server: https://kubernetes.default.svc
+    name: cluster1-eks
     namespace: clusterscope-redis
   syncPolicy:
     automated:

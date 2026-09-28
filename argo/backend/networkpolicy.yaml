@@ -1,42 +1,27 @@
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
 metadata:
-  name: clusterscope-backend-cnp
+  name: clusterscope-backend
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 spec:
-  endpointSelector:
+  podSelector:
     matchLabels:
       app: clusterscope-backend
+  policyTypes:
+    - Ingress
+    - Egress
   ingress:
-    - fromEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": clusterscope-frontend
-            "k8s:app": clusterscope-frontend
-      toPorts:
-        - ports:
-            - protocol: TCP
-              port: "8000"
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: clusterscope-frontend
+          podSelector:
+            matchLabels:
+              app: clusterscope-frontend
+      ports:
+        - protocol: TCP
+          port: 8000
   egress:
-    - toEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": clusterscope-postgres
-            "k8s:app": clusterscope-postgres
-      toPorts:
-        - ports:
-            - protocol: TCP
-              port: "5432"
-    - toEntities:
-        - kube-apiserver
-    - toEntities:
-        - world
-    - toEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": kube-system
-            "k8s:k8s-app": kube-dns
-      toPorts:
-        - ports:
-            - protocol: UDP
-              port: "53"
-            - protocol: TCP
-              port: "53"
+    # Preserve the former Cilium world and kube-apiserver egress access.
+    - {}

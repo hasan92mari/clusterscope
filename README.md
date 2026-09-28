@@ -51,10 +51,11 @@ The chart supports single-namespace and multi-namespace installations. See [helm
 As an alternative to Helm, install the Argo CD project and ApplicationSet:
 
 ```bash
+kubectl apply -f argo/cluster1-eks-registration.yaml
 kubectl apply -f argo/appset+project.yaml
 ```
 
-The ApplicationSet creates one Application for each component directory under `argo/`, excluding the Argo CD bootstrap manifests. Do not manage the same workloads with Helm and Argo CD at the same time.
+The first manifest registers the local EKS cluster as an Argo CD deployment target. EKS-managed Argo CD requires the EKS cluster ARN in the registration Secret and does not support `https://kubernetes.default.svc`. The `AppProject` must list the capability namespace (`argocd`) in `spec.sourceNamespaces`. The ApplicationSet then creates one Application for each component directory under `argo/`, excluding the Argo CD bootstrap manifests. Do not manage the same workloads with Helm and Argo CD at the same time.
 
 ### 4. Use the dashboard
 
@@ -655,7 +656,7 @@ A production deployment would require additional considerations, including:
 
 The default storage class is `local-path`, which is intended for local development and learning rather than production use. Production deployments should use storage appropriate to their availability and durability requirements.
 
-The raw manifests in `argo/` include Cilium network policies and HorizontalPodAutoscalers for the application workloads. The Helm chart does not currently template these resources, so production Helm deployments should add equivalent policy and autoscaling configuration.
+The raw manifests in `argo/` include Kubernetes NetworkPolicies and HorizontalPodAutoscalers for the application workloads. EKS applies these policies through the Amazon VPC CNI network policy feature, which is enabled by `eks-terraform`. The frontend and backend retain broad outbound access to preserve the former Cilium `world` and `kube-apiserver` egress rules; Redis and PostgreSQL allow DNS egress and accept application traffic only from their respective callers. The Helm chart does not currently template these resources, so Helm deployments should add equivalent policy and autoscaling configuration.
 
 ---
 

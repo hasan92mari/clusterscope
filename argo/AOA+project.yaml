@@ -5,11 +5,13 @@ metadata:
   namespace: argocd
 spec:
   description: Project for Clusterscope frontend and backend workloads
+  sourceNamespaces:
+    - argocd
   sourceRepos:
     - https://github.com/hasan92mari/clusterscope.git
   destinations:
     - namespace: clusterscope-*
-      server: https://kubernetes.default.svc
+      name: cluster1-eks
   clusterResourceWhitelist:
     - group: ""
       kind: Namespace
@@ -32,8 +34,8 @@ spec:
       kind: LimitRange
     - group: ""
       kind: ResourceQuota
-    - group: cilium.io
-      kind: CiliumNetworkPolicy
+    - group: networking.k8s.io
+      kind: NetworkPolicy
     - group: "rbac.authorization.k8s.io"
       kind: Role
     - group: "rbac.authorization.k8s.io"
@@ -75,7 +77,7 @@ spec:
     targetRevision: feat/add-argocd-crds
     path: argo/argocd-crds
   destination:
-    server: https://kubernetes.default.svc
+    name: cluster1-eks
   syncPolicy:
     automated:
       prune: true
