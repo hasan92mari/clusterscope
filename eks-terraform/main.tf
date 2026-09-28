@@ -6,6 +6,10 @@ locals {
     "eks-auth",
   ])
 
+  node_route_table_ids = toset([
+    for route_table in data.aws_route_table.node_subnets : route_table.id
+  ])
+
   addons = {
     "aws-ebs-csi-driver" = {
       version         = "v1.66.0-eksbuild.1"
@@ -55,6 +59,19 @@ locals {
 data "aws_subnet" "selected" {
   for_each = toset(var.subnet_ids)
   id       = each.value
+}
+
+data "aws_subnet" "nat_public" {
+  id = var.nat_public_subnet_id
+}
+
+data "aws_route_table" "nat_public" {
+  subnet_id = var.nat_public_subnet_id
+}
+
+data "aws_route_table" "node_subnets" {
+  for_each  = toset(var.subnet_ids)
+  subnet_id = each.value
 }
 
 resource "aws_eks_cluster" "this" {
@@ -115,8 +132,50 @@ resource "aws_eks_cluster" "this" {
 
 }
 
-# The selected node subnets are isolated and have no NAT route. These
-# interface endpoints provide private access to the APIs needed by the nodes.
+# The single NAT Gateway provides outbound internet access to nodes in the
+# isolated subnets. It is placed in an existing public subnet and shared
+# across Availability Zones to limit fixed NAT Gateway costs.
+resource "aws_eip" "node_egress_nat" {
+  domain = "vpc"
+
+  tags = merge(var.tags, {
+    Name = "${var.cluster_name}-node-egress-nat"
+  })
+}
+
+resource "aws_nat_gateway" "node_egress" {
+  allocation_id     = aws_eip.node_egress_nat.id
+  subnet_id         = var.nat_public_subnet_id
+  connectivity_type = "public"
+
+  tags = merge(var.tags, {
+    Name = "${var.cluster_name}-node-egress-nat"
+  })
+
+  lifecycle {
+    precondition {
+      condition = (
+        data.aws_subnet.nat_public.vpc_id == var.vpc_id &&
+        anytrue([
+          for route in data.aws_route_table.nat_public.routes :
+          route.cidr_block == "0.0.0.0/0" && try(startswith(route.gateway_id, "igw-"), false)
+        ])
+      )
+      error_message = "nat_public_subnet_id must belong to var.vpc_id and have a 0.0.0.0/0 route to an Internet Gateway."
+    }
+  }
+}
+
+resource "aws_route" "node_default_egress" {
+  for_each = local.node_route_table_ids
+
+  route_table_id         = each.value
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.node_egress.id
+}
+
+# Interface endpoints keep AWS service traffic private; the S3 gateway
+# endpoint remains associated with the node subnets' route tables.
 resource "aws_vpc_endpoint" "node_services" {
   for_each = local.node_service_vpc_endpoints
 
@@ -183,6 +242,7 @@ resource "aws_eks_node_group" "this" {
   depends_on = [
     aws_iam_role_policy_attachment.managed_node_group,
     aws_vpc_endpoint.node_services,
+    aws_route.node_default_egress,
   ]
 }
 
@@ -259,24 +319,4 @@ resource "aws_eks_capability" "argocd" {
   }
 
   depends_on = [aws_iam_role_policy_attachment.argocd_secrets_readonly]
-}
-
-output "cluster_name" {
-  description = "EKS cluster name."
-  value       = aws_eks_cluster.this.name
-}
-
-output "node_group_name" {
-  description = "EKS managed node group with two fixed t3.small instances."
-  value       = aws_eks_node_group.this.node_group_name
-}
-
-output "argocd_server_url" {
-  description = "Public URL of the managed Argo CD capability."
-  value       = aws_eks_capability.argocd.configuration[0].argo_cd[0].server_url
-}
-
-output "update_kubeconfig_command" {
-  description = "Run this command to add the EKS cluster credentials to your local kubeconfig."
-  value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${aws_eks_cluster.this.name}"
 }

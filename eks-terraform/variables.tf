@@ -28,6 +28,12 @@ variable "subnet_ids" {
   default     = ["subnet-0f1c8ea31b57a6708", "subnet-033fd9a9e10e896b4"]
 }
 
+variable "nat_public_subnet_id" {
+  description = "Existing public subnet for the single outbound NAT Gateway. It must have a default route to an Internet Gateway."
+  type        = string
+  default     = "subnet-092f108598671044e"
+}
+
 variable "cluster_role_arn" {
   description = "Existing EKS Auto Mode cluster IAM role ARN. The role must have the required Auto Mode policies attached."
   type        = string
