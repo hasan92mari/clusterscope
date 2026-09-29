@@ -6,6 +6,11 @@ metadata:
     argocd.argoproj.io/sync-wave: "2"
 spec:
   gatewayClassName: aws-alb
+  infrastructure:
+    parametersRef:
+      group: gateway.k8s.aws
+      kind: LoadBalancerConfiguration
+      name: clusterscope-frontend-alb
   listeners:
     - name: https
       protocol: HTTPS

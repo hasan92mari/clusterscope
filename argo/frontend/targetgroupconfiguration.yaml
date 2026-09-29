@@ -1,0 +1,12 @@
+apiVersion: gateway.k8s.aws/v1beta1
+kind: TargetGroupConfiguration
+metadata:
+  name: clusterscope-frontend-targets
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  targetReference:
+    kind: Service
+    name: clusterscope-frontend
+  defaultConfiguration:
+    targetType: ip

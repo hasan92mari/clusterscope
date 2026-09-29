@@ -44,6 +44,10 @@ spec:
       kind: Gateway
     - group: "gateway.networking.k8s.io"
       kind: HTTPRoute
+    - group: "gateway.k8s.aws"
+      kind: LoadBalancerConfiguration
+    - group: "gateway.k8s.aws"
+      kind: TargetGroupConfiguration
   clusterResourceBlacklist:
     - group: rbac.authorization.k8s.io
       kind: ClusterRole

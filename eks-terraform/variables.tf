@@ -23,7 +23,7 @@ variable "vpc_id" {
 }
 
 variable "subnet_ids" {
-  description = "Existing subnets in the VPC, preferably spanning at least two Availability Zones."
+  description = "Existing private subnets in the VPC, spanning at least two Availability Zones, for the EKS control plane and managed nodes."
   type        = list(string)
   default     = ["subnet-0f1c8ea31b57a6708", "subnet-033fd9a9e10e896b4"]
 }
@@ -41,13 +41,13 @@ variable "alb_public_subnet_ids" {
 }
 
 variable "aws_cli_path" {
-  description = "Path to the AWS CLI binary used by the Kubernetes and Helm providers to authenticate to EKS."
+  description = "Path to the AWS CLI binary used in the post-provisioning kubeconfig command."
   type        = string
   default     = "/Users/hasanmariam/.local/share/aws-cli/aws"
 }
 
 variable "cluster_role_arn" {
-  description = "Existing EKS Auto Mode cluster IAM role ARN. The role must have the required Auto Mode policies attached."
+  description = "Existing EKS cluster IAM role ARN with the permissions required by standard EKS clusters."
   type        = string
   default     = "arn:aws:iam::992189742733:role/AmazonEKSClusterRole"
 }

@@ -1,0 +1,13 @@
+apiVersion: gateway.k8s.aws/v1beta1
+kind: LoadBalancerConfiguration
+metadata:
+  name: clusterscope-frontend-alb
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  scheme: internet-facing
+  listenerConfigurations:
+    - protocolPort: "HTTPS:443"
+      # Copy the value from `terraform output -raw cluster_demo_tls_certificate_arn`.
+      # The certificate is self-signed, so clients will show a trust warning.
+      defaultCertificate: REPLACE_WITH_CLUSTER_DEMO_TLS_CERTIFICATE_ARN

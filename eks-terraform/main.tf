@@ -1,11 +1,4 @@
 locals {
-  node_service_vpc_endpoints = toset([
-    "ecr.api",
-    "ecr.dkr",
-    "ec2",
-    "eks-auth",
-  ])
-
   node_route_table_ids = toset([
     for route_table in data.aws_route_table.node_subnets : route_table.id
   ])
@@ -53,6 +46,16 @@ locals {
       service_account = "aws-node"
       role_arn        = var.vpc_cni_pod_identity_role_arn
     }
+  }
+
+  bootstrap_addons = {
+    for name, addon in local.addons : name => addon
+    if contains(["vpc-cni", "kube-proxy", "eks-pod-identity-agent"], name)
+  }
+
+  post_node_addons = {
+    for name, addon in local.addons : name => addon
+    if !contains(["vpc-cni", "kube-proxy", "eks-pod-identity-agent"], name)
   }
 }
 
@@ -190,23 +193,6 @@ resource "aws_ec2_tag" "alb_public_subnet_cluster" {
   value       = "shared"
 }
 
-# Interface endpoints keep AWS service traffic private; the S3 gateway
-# endpoint remains associated with the node subnets' route tables.
-resource "aws_vpc_endpoint" "node_services" {
-  for_each = local.node_service_vpc_endpoints
-
-  vpc_id              = var.vpc_id
-  service_name        = "com.amazonaws.${var.aws_region}.${each.value}"
-  vpc_endpoint_type   = "Interface"
-  private_dns_enabled = true
-  subnet_ids          = var.subnet_ids
-  security_group_ids  = [aws_eks_cluster.this.vpc_config[0].cluster_security_group_id]
-
-  tags = merge(var.tags, {
-    Name = "${var.cluster_name}-${replace(each.value, ".", "-")}-endpoint"
-  })
-}
-
 resource "aws_iam_role" "managed_node_group" {
   name = "${var.cluster_name}-managed-node-role"
 
@@ -257,13 +243,13 @@ resource "aws_eks_node_group" "this" {
 
   depends_on = [
     aws_iam_role_policy_attachment.managed_node_group,
-    aws_vpc_endpoint.node_services,
     aws_route.node_default_egress,
+    aws_eks_addon.bootstrap,
   ]
 }
 
-resource "aws_eks_addon" "this" {
-  for_each = local.addons
+resource "aws_eks_addon" "bootstrap" {
+  for_each = local.bootstrap_addons
 
   cluster_name                = aws_eks_cluster.this.name
   addon_name                  = each.key
@@ -280,8 +266,65 @@ resource "aws_eks_addon" "this" {
       role_arn        = pod_identity_association.value.role_arn
     }
   }
+}
 
-  depends_on = [aws_vpc_endpoint.node_services]
+resource "aws_eks_addon" "post_node" {
+  for_each = local.post_node_addons
+
+  cluster_name                = aws_eks_cluster.this.name
+  addon_name                  = each.key
+  addon_version               = each.value.version
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "PRESERVE"
+  tags                        = var.tags
+
+  dynamic "pod_identity_association" {
+    for_each = each.value.role_arn == null ? [] : [each.value]
+    content {
+      service_account = pod_identity_association.value.service_account
+      role_arn        = pod_identity_association.value.role_arn
+    }
+  }
+
+  depends_on = [aws_eks_node_group.this]
+}
+
+resource "aws_iam_policy" "load_balancer_controller" {
+  name        = "${var.cluster_name}-aws-load-balancer-controller"
+  description = "Permissions for AWS Load Balancer Controller ${var.cluster_name}"
+  policy      = file("${path.module}/aws-load-balancer-controller-iam-policy.json")
+  tags        = var.tags
+}
+
+resource "aws_iam_role" "load_balancer_controller" {
+  name = "${var.cluster_name}-aws-load-balancer-controller"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "pods.eks.amazonaws.com"
+      }
+      Action = ["sts:AssumeRole", "sts:TagSession"]
+    }]
+  })
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "load_balancer_controller" {
+  role       = aws_iam_role.load_balancer_controller.name
+  policy_arn = aws_iam_policy.load_balancer_controller.arn
+}
+
+resource "aws_eks_pod_identity_association" "load_balancer_controller" {
+  cluster_name    = aws_eks_cluster.this.name
+  namespace       = "kube-system"
+  service_account = "aws-load-balancer-controller"
+  role_arn        = aws_iam_role.load_balancer_controller.arn
+
+  depends_on = [aws_eks_addon.bootstrap["eks-pod-identity-agent"]]
 }
 
 data "aws_iam_role" "argocd_capability" {
@@ -299,11 +342,6 @@ data "aws_identitystore_user" "argocd_admin" {
       attribute_value = "argocd-admin"
     }
   }
-}
-
-resource "aws_iam_role_policy_attachment" "argocd_secrets_readonly" {
-  role       = data.aws_iam_role.argocd_capability.name
-  policy_arn = "arn:aws:iam::aws:policy/AWSSecretsManagerClientReadOnlyAccess"
 }
 
 resource "aws_eks_capability" "argocd" {
@@ -334,5 +372,74 @@ resource "aws_eks_capability" "argocd" {
     }
   }
 
-  depends_on = [aws_iam_role_policy_attachment.argocd_secrets_readonly]
+}
+
+# This demo lets Argo CD deploy future applications without Terraform needing
+# to know their namespaces or resource types. AppProject policies in Git remain
+# the deployment guardrail for applications submitted through Argo CD.
+resource "aws_eks_access_policy_association" "argocd_cluster_admin" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = data.aws_iam_role.argocd_capability.arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_capability.argocd]
+}
+
+# Install shared API schemas after EKS and its worker nodes are ready. These
+# CRDs are cluster configuration, not billable AWS resources. Terraform tracks
+# the bootstrap trigger; the Kubernetes/Helm add-on resources remain tracked in
+# the separate addons state where their schemas are available during planning.
+resource "terraform_data" "gateway_api_crds" {
+  input = {
+    aws_cli_path = var.aws_cli_path
+    aws_region   = var.aws_region
+    cluster_name = var.cluster_name
+  }
+
+  triggers_replace = [
+    aws_eks_cluster.this.id,
+    "v1.6.0",
+    "v2.14.1",
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      set -euo pipefail
+
+      "${self.input.aws_cli_path}" eks update-kubeconfig \
+        --region "${self.input.aws_region}" \
+        --name "${self.input.cluster_name}"
+
+      kubectl wait --for=condition=Ready nodes --all --timeout=15m
+
+      kubectl apply --server-side=true \
+        -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/$${GATEWAY_API_VERSION}/standard-install.yaml"
+      kubectl wait --for=condition=Established --timeout=120s \
+        crd/gatewayclasses.gateway.networking.k8s.io \
+        crd/gateways.gateway.networking.k8s.io \
+        crd/httproutes.gateway.networking.k8s.io
+
+      kubectl apply \
+        -f "https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/$${AWS_LBC_VERSION}/config/crd/gateway/gateway-crds.yaml"
+      kubectl wait --for=condition=Established --timeout=120s \
+        crd/loadbalancerconfigurations.gateway.k8s.aws \
+        crd/targetgroupconfigurations.gateway.k8s.aws \
+        crd/listenerruleconfigurations.gateway.k8s.aws
+    EOT
+
+    environment = {
+      GATEWAY_API_VERSION = "v1.6.0"
+      AWS_LBC_VERSION     = "v2.14.1"
+    }
+  }
+
+  depends_on = [
+    aws_eks_node_group.this,
+    aws_eks_addon.post_node,
+  ]
 }

@@ -16,20 +16,24 @@ output "argocd_server_url" {
 
 output "update_kubeconfig_command" {
   description = "Run this command to add the EKS cluster credentials to your local kubeconfig."
-  value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${aws_eks_cluster.this.name}"
-}
-
-output "node_egress_nat_public_ip" {
-  description = "Static public IPv4 address used for outbound connections from the EKS node subnets."
-  value       = aws_eip.node_egress_nat.public_ip
+  value       = "${var.aws_cli_path} eks update-kubeconfig --region ${var.aws_region} --name ${aws_eks_cluster.this.name}"
 }
 
 output "aws_load_balancer_controller_role_arn" {
-  description = "Pod Identity role used by AWS Load Balancer Controller."
+  description = "Pod Identity role used by the cluster-wide AWS Load Balancer Controller."
   value       = aws_iam_role.load_balancer_controller.arn
 }
 
-output "alb_demo_certificate_arn" {
-  description = "ACM ARN of the self-signed TLS certificate used by the ALB demo Gateway."
+output "cluster_demo_tls_certificate_arn" {
+  description = "ACM ARN of the self-signed demo certificate, if a GitOps Gateway needs HTTPS without a public hostname."
   value       = aws_acm_certificate.alb_demo.arn
+}
+
+output "addons_setup_commands" {
+  description = "Commands to plan and apply the tracked Kubernetes/Helm add-ons after the root apply installs the shared CRDs."
+  value       = <<-EOT
+    terraform -chdir=addons init
+    terraform -chdir=addons plan
+    terraform -chdir=addons apply
+  EOT
 }
