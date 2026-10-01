@@ -10,4 +10,4 @@ spec:
     - protocolPort: "HTTPS:443"
       # Copy the value from `terraform output -raw cluster_demo_tls_certificate_arn`.
       # The certificate is self-signed, so clients will show a trust warning.
-      defaultCertificate: REPLACE_WITH_CLUSTER_DEMO_TLS_CERTIFICATE_ARN
+      defaultCertificate: arn:aws:acm:eu-north-1:992189742733:certificate/a5e1fc4f-6d66-4483-a241-ab1857862475 #REPLACE_WITH_CLUSTER_DEMO_TLS_CERTIFICATE_ARN
