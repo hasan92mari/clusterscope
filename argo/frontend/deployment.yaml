@@ -16,7 +16,7 @@ spec:
       serviceAccountName: clusterscope-frontend
       containers:
         - name: frontend
-          image: ghcr.io/hasan92mari/clusterscope-frontend:latest
+          image: ghcr.io/hasan92mari/clusterscope-frontend:eks
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

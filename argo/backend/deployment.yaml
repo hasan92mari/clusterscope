@@ -19,7 +19,7 @@ spec:
       serviceAccountName: clusterscope-backend
       containers:
         - name: backend
-          image: ghcr.io/hasan92mari/clusterscope-backend:latest
+          image: ghcr.io/hasan92mari/clusterscope-backend:eks
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
