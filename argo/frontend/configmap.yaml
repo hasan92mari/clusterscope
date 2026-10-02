@@ -4,5 +4,3 @@ metadata:
   name: clusterscope-frontend-config
 data:
   backend-url: "http://clusterscope-backend.clusterscope-backend.svc.cluster.local:8000"
-  redis-host: "clusterscope-redis.clusterscope-redis.svc.cluster.local"
-  redis-port: "6379"

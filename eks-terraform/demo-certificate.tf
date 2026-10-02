@@ -8,7 +8,7 @@ resource "tls_private_key" "alb_demo" {
 resource "tls_self_signed_cert" "alb_demo" {
   private_key_pem       = tls_private_key.alb_demo.private_key_pem
   validity_period_hours = 8760
-  dns_names             = []
+  dns_names             = ["clusterscope.example.com"]
   allowed_uses = [
     "key_encipherment",
     "digital_signature",
@@ -16,6 +16,7 @@ resource "tls_self_signed_cert" "alb_demo" {
   ]
 
   subject {
+    common_name  = "clusterscope.example.com"
     organization = "EKS demo"
   }
 }

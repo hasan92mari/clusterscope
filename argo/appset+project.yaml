@@ -4,7 +4,7 @@ metadata:
   name: clusterscope-project
   namespace: argocd
 spec:
-  description: Project for Clusterscope frontend and backend workloads
+  description: Project for ClusterScope application workloads and external-secret synchronization
   sourceNamespaces:
     - argocd
   sourceRepos:
@@ -44,6 +44,10 @@ spec:
       kind: Gateway
     - group: "gateway.networking.k8s.io"
       kind: HTTPRoute
+    - group: external-secrets.io
+      kind: SecretStore
+    - group: external-secrets.io
+      kind: ExternalSecret
     - group: "gateway.k8s.aws"
       kind: LoadBalancerConfiguration
     - group: "gateway.k8s.aws"
@@ -85,6 +89,10 @@ spec:
               revision: HEAD
               directories:
                 - path: argo/*
+                - path: argo/postgres
+                  exclude: true
+                - path: argo/redis
+                  exclude: true
                 - path: argo/argocd-crds
                   exclude: true
           - list:

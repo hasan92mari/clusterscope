@@ -62,14 +62,14 @@ spec:
                   key: database
             - name: POSTGRES_HOST
               valueFrom:
-                configMapKeyRef:
-                  name: clusterscope-backend-config
-                  key: postgres-host
+                secretKeyRef:
+                  name: clusterscope-postgres
+                  key: host
             - name: POSTGRES_PORT
               valueFrom:
-                configMapKeyRef:
-                  name: clusterscope-backend-config
-                  key: postgres-port
+                secretKeyRef:
+                  name: clusterscope-postgres
+                  key: port
           livenessProbe:
             httpGet:
               path: /healthz

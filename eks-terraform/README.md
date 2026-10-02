@@ -14,7 +14,7 @@ Application namespaces, Gateways, routes, and load balancer configuration remain
 - IAM Identity Center in `eu-north-1`, user `argocd-admin`, and IAM role `AmazonEKSCapabilityArgoCDRole`.
 - The private subnet route tables must not already have a default route managed outside this stack; Terraform routes them through one NAT Gateway.
 
-Review `variables.tf` before applying. Set a tighter `public_access_cidrs` allowlist if possible; the default `0.0.0.0/0` matches the existing cluster configuration. The node group is fixed at two on-demand `t3.small` instances. EKS, NAT Gateway, public IPv4, and other resources incur charges.
+Review `variables.tf` before applying. Set a tighter `public_access_cidrs` allowlist if possible; the default `0.0.0.0/0` matches the existing cluster configuration. The node group uses on-demand `t3.small` instances. RDS PostgreSQL and ElastiCache Redis are private, single-AZ managed services in the existing private subnets; both, along with EKS, NAT Gateway, public IPv4, and other resources, incur charges. Generated database credentials are stored in Secrets Manager and also exist in Terraform state, so use encrypted, access-controlled state storage.
 
 ## Stage 1: Create AWS infrastructure
 
@@ -31,21 +31,21 @@ Wait for the cluster and nodes to become active. Terraform associates `AmazonEKS
 
 ## Stage 2: Install tracked Kubernetes add-ons
 
-The root apply has already installed the shared CRDs. Print and run the generated commands to review and apply the tracked add-ons:
+The root apply has already installed the shared CRDs and created the managed databases and their Secrets Manager entries. Print and run the generated commands to review and apply the tracked add-ons:
 
 ```sh
 terraform output -raw addons_setup_commands
 ```
 
-These initialize `addons/` and show its plan. Review and approve that plan. Helm and Kubernetes providers connect to an existing cluster; the chart release and `aws-alb` GatewayClass are tracked in the add-ons state.
+These initialize `addons/` and show its plan. Review and approve that plan. Helm and Kubernetes providers connect to an existing cluster; the AWS Load Balancer Controller, External Secrets Operator, and `aws-alb` GatewayClass are tracked in the add-ons state. External Secrets uses the EKS Pod Identity association created by the root stack to read only the two application secrets.
 
 If the AWS CLI path differs on this machine, set `aws_cli_path` in `addons/terraform.tfvars`. Keep `aws_region`, `cluster_name`, and `vpc_id` consistent with the root variables.
 
 ## Deploy applications through Argo CD
 
-Add or update app resources under `argo/`, then sync them through the Argo CD UI or let the ApplicationSet sync them. The AppSet's `CreateNamespace=true` option creates destination namespaces. The frontend Gateway and its AWS-specific load balancer settings live in `argo/frontend/`.
+Push the Argo changes, then sync the backend and frontend applications. They read RDS and Redis connection details from Secrets Manager through External Secrets. The ApplicationSet no longer deploys the in-cluster PostgreSQL and Redis StatefulSets. Existing PostgreSQL data is not migrated by this change; export and restore it before pruning the old PostgreSQL workload if it must be preserved. The AppSet's `CreateNamespace=true` option creates destination namespaces. The frontend Gateway and its AWS-specific load balancer settings live in `argo/frontend/`.
 
-For the HTTPS demo, copy `terraform output -raw cluster_demo_tls_certificate_arn` into `../argo/frontend/loadbalancerconfiguration.yaml`, commit that value, and sync the app. The certificate is self-signed and has no public trust chain, so browsers will warn.
+For the HTTPS demo, apply the Terraform changes, then copy `terraform output -raw cluster_demo_tls_certificate_arn` into `../argo/frontend/loadbalancerconfiguration.yaml`, commit that value, and sync the app. The self-signed certificate uses the reserved sample name `clusterscope.example.com`, so browsers will warn about trust and the hostname will not match the ALB DNS name. For production HTTPS, use a domain you control with a publicly trusted ACM certificate and point that domain to the ALB.
 
 ## Destroy
 

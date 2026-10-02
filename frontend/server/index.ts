@@ -30,9 +30,12 @@ const redisPort =
 const redisPassword =
   process.env.REDIS_PASSWORD;
 
+const redisScheme =
+  process.env.REDIS_TLS === "true" ? "rediss" : "redis";
+
 const redisUrl = redisPassword
-  ? `redis://:${encodeURIComponent(redisPassword)}@${redisHost}:${redisPort}`
-  : `redis://${redisHost}:${redisPort}`;
+  ? `${redisScheme}://:${encodeURIComponent(redisPassword)}@${redisHost}:${redisPort}`
+  : `${redisScheme}://${redisHost}:${redisPort}`;
 
 const redis = createClient({
   url: redisUrl,

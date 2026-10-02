@@ -1,5 +1,6 @@
 locals {
-  controller_chart_version = "1.14.0"
+  controller_chart_version       = "1.14.0"
+  external_secrets_chart_version = "0.17.0"
 
   controller_values = {
     clusterName = var.cluster_name
@@ -31,6 +32,24 @@ resource "helm_release" "aws_load_balancer_controller" {
   wait       = true
 
   values = [yamlencode(local.controller_values)]
+}
+
+resource "helm_release" "external_secrets" {
+  name             = "external-secrets"
+  repository       = "https://charts.external-secrets.io"
+  chart            = "external-secrets"
+  version          = local.external_secrets_chart_version
+  namespace        = "external-secrets"
+  create_namespace = true
+  timeout          = 600
+  wait             = true
+
+  values = [yamlencode({
+    serviceAccount = {
+      create = true
+      name   = "external-secrets"
+    }
+  })]
 }
 
 resource "kubernetes_manifest" "alb_gatewayclass" {

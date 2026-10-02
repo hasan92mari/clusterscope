@@ -5,7 +5,7 @@ output "cluster_name" {
 }
 
 output "node_group_name" {
-  description = "EKS managed node group with two fixed t3.small instances."
+  description = "EKS managed node group using t3.small instances."
   value       = aws_eks_node_group.this.node_group_name
 }
 
@@ -27,6 +27,16 @@ output "aws_load_balancer_controller_role_arn" {
 output "cluster_demo_tls_certificate_arn" {
   description = "ACM ARN of the self-signed demo certificate, if a GitOps Gateway needs HTTPS without a public hostname."
   value       = aws_acm_certificate.alb_demo.arn
+}
+
+output "managed_postgres_endpoint" {
+  description = "Private RDS PostgreSQL endpoint used by the ClusterScope backend."
+  value       = aws_db_instance.postgres.address
+}
+
+output "managed_redis_endpoint" {
+  description = "Private ElastiCache Redis endpoint used by the ClusterScope frontend."
+  value       = aws_elasticache_replication_group.redis.primary_endpoint_address
 }
 
 output "addons_setup_commands" {

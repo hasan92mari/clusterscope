@@ -83,16 +83,18 @@ spec:
                   key: backend-url
             - name: REDIS_HOST
               valueFrom:
-                configMapKeyRef:
-                  name: clusterscope-frontend-config
-                  key: redis-host
+                secretKeyRef:
+                  name: clusterscope-frontend-redis
+                  key: host
             - name: REDIS_PORT
               valueFrom:
-                configMapKeyRef:
-                  name: clusterscope-frontend-config
-                  key: redis-port
+                secretKeyRef:
+                  name: clusterscope-frontend-redis
+                  key: port
+            - name: REDIS_TLS
+              value: "true"
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: clusterscope-redis
+                  name: clusterscope-frontend-redis
                   key: password
