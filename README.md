@@ -1,698 +1,163 @@
+# ClusterScope: AWS EKS
 
-# ClusterScope
-
-ClusterScope is a Kubernetes learning project built around a realistic cloud-native application. It is designed to make deployment, networking, state, security, scaling, and recovery concepts easy to inspect in one place.
-
-## Start here
-
-### 1. Prepare the cluster
-
-Before installing ClusterScope, make sure the cluster provides:
-
-- Kubernetes and `kubectl` access.
-- Helm 3.
-- For the raw Argo CD manifests, a `gp2` `StorageClass` and the AWS EBS CSI add-on. The Helm chart defaults to `local-path`; set custom `redis.storageClassName` and `postgres.storageClassName` values when using it on EKS.
-- Gateway API CRDs and a Gateway controller, such as Envoy Gateway.
-- A `GatewayClass` named `envoy-gateway-class`, or another class name supplied through Helm values.
-- A TLS Secret for the Helm chart's HTTPS listener. The EKS AWS Load Balancer Controller path uses an ACM certificate instead.
-- A LoadBalancer implementation such as MetalLB when using a local cluster and external access is required.
-
-ClusterScope deploys the application resources; it does not install Gateway API CRDs, Envoy Gateway, MetalLB, or certificate infrastructure.
-
-### 2. Install the application
-
-Add the published Helm repository and install the chart from it:
-
-```bash
-helm repo add clusterscope https://hasan92mari.github.io/clusterscope
-helm repo update
-helm install clusterscope clusterscope/clusterscope
-```
-
-Check that the application is ready:
-
-```bash
-kubectl get pods -n clusterscope
-kubectl get gateway,httproute -n clusterscope
-```
-
-To apply chart changes later:
-
-```bash
-helm upgrade clusterscope clusterscope/clusterscope
-```
-
-The chart supports single-namespace and multi-namespace installations. See [helm/README.md](helm/README.md) for values, TLS setup, storage, scaling, validation, upgrades, and uninstall instructions.
-
-> The default image tags and Redis/PostgreSQL credentials are intended for local learning only. Pin image versions and provide credentials through a secure secret-management workflow before using this outside a training environment.
-
-### 3. Deploy with Argo CD (GitOps)
-
-As an alternative to Helm, install the Argo CD project and ApplicationSet:
-
-```bash
-kubectl apply -f argo/cluster1-eks-registration.yaml
-kubectl apply -f argo/appset+project.yaml
-```
-
-The first manifest registers the local EKS cluster as an Argo CD deployment target. EKS-managed Argo CD requires the EKS cluster ARN in the registration Secret and does not support `https://kubernetes.default.svc`. The `AppProject` must list the capability namespace (`argocd`) in `spec.sourceNamespaces`. The ApplicationSet then creates one Application for each component directory under `argo/`, excluding the Argo CD bootstrap manifests. Do not manage the same workloads with Helm and Argo CD at the same time.
-
-### 4. Use the dashboard
-
-| Dashboard section | Purpose |
-|---|---|
-| Frontend cards | Display the current frontend Pod's uptime, IP, namespace, application, node, and restart count. |
-| Redis | Shows the frontend connection state to the shared Redis service used for session data. |
-| Backend | Connects to the backend and displays its Pod details when it is available. |
-| PostgreSQL user data | Lets a user save and retrieve a value through the backend; the value is persisted in PostgreSQL. |
-| Language and theme | Provide English, German, and Arabic UI choices and a light/dark presentation mode. |
-
-## Documentation guide
-
-The sections below explain the design in more detail. Start with **Architecture**, choose either **Helm** or **Argo CD** for deployment, then use **Training Scenarios** for hands-on exercises.
-
-## Overview
-
-**ClusterScope** is a cloud-native application built as a **Kubernetes training and learning platform**.
-The main goal of the project is to provide a realistic, hands-on environment for people who are learning Kubernetes and want to practice deploying, managing, securing, scaling, troubleshooting, and recovering a complete application running on Kubernetes.
-The project is not intended to be a commercial production application. Instead, it uses a production-inspired architecture to demonstrate practical Kubernetes, cloud-native, and DevOps concepts.
-
----
+This branch provisions the ClusterScope demo platform on AWS EKS and deploys its application through Argo CD. Terraform manages AWS infrastructure and cluster add-ons; Argo CD manages the Kubernetes application manifests in `argo/`.
 
 ## Architecture
 
-ClusterScope is designed as a **microservices-based application** with a clear separation between stateless application workloads and stateful data services.
-
 ```text
-
-                           Browser
-                              |
-                         HTTPS :443
-                              |
-                              v
-                    +-------------------+
-                    |   Envoy Gateway   |
-                    |    Gateway API    |
-                    +-------------------+
-                              |
-                         HTTPRoute
-                              |
-                              v
-                    +-------------------+
-                    |     Frontend      |
-                    |   Stateless App   |
-                    +-------------------+
-                       |             |
-                 API Requests    Cache / Sessions
-                       |             |
-                       v             v
-                +-----------+    +---------+
-                |  Backend  |    |  Redis  |
-                | Stateless |    | Stateful|
-                +-----------+    +---------+
-                       |
-                       | Database Access
-                       v
-                +-------------+
-                | PostgreSQL  |
-                |  Stateful   |
-                +-------------+
-                       |
-                       v
-                Persistent Storage
-
-```
-
-### Component Responsibilities
-
-| Component | Responsibility |
-|---|---|
-| Frontend | User interface, API communication, cache and session management |
-| Backend | Application API and business logic |
-| Redis | Cache and session data for the Frontend |
-| PostgreSQL | Persistent application data for the Backend |
-| Envoy Gateway | HTTPS/TLS termination and external traffic routing |
-| Kubernetes | Scheduling, networking, scaling, self-healing, and resource management |
-| Helm | Application packaging and deployment management |
-The Backend does **not** communicate with Redis.
-The communication model is:
-
-```text
-
-Frontend
-   |
-   +----> Redis
-   |       └── Cache / Sessions
-   |
-   +----> Backend
-           └──> PostgreSQL
-
-```
-
----
-
-## Kubernetes Training Platform
-
-ClusterScope was created primarily as a **practical Kubernetes training environment**.
-Instead of learning Kubernetes only through isolated examples, learners can work with a complete application and practice real operational scenarios.
-The project can be used to experiment with:
-- Deployments
-- StatefulSets
-- Services
-- ConfigMaps
-- Secrets
-- PersistentVolumes
-- PersistentVolumeClaims
-- Namespaces
-- ServiceAccounts
-- RBAC
-- Liveness and readiness probes
-- Resource requests and limits
-- Replica scaling
-- Gateway API
-- HTTPS/TLS
-- Kubernetes DNS
-- Cross-namespace communication
-- Helm
-- Failure recovery
-- Pod replacement
-- Persistent data
-
----
-
-## Stateless Architecture
-
-The Frontend and Backend are designed as **stateless application workloads**.
-Their application Pods do not depend on local container storage for persistent application state.
-This makes them suitable for horizontal scaling:
-
-```text
-
-                 Frontend Service
-                       |
-             +---------+---------+
-             |         |         |
-             v         v         v
-          Frontend  Frontend  Frontend
-            Pod       Pod       Pod
-
-```
-
-The same principle applies to the Backend.
-If a Pod fails, Kubernetes can create a replacement without requiring application data to be stored inside that Pod.
-
----
-
-## Stateful Components
-
-Stateful components are separated from the stateless application workloads.
-ClusterScope uses:
-- **Redis** for cache and session data.
-- **PostgreSQL** for persistent application data.
-Both are deployed using Kubernetes StatefulSets and persistent storage.
-
-```text
-
-Redis
+Internet
   |
+  | HTTPS :443 (ACM demo certificate)
   v
-PVC
+Internet-facing ALB
   |
+  | AWS Load Balancer Controller + Gateway API
   v
-Persistent Storage
+Gateway -> HTTPRoute -> Frontend Deployment
+                         |             |
+                         |             +--> ElastiCache Redis (TLS, auth)
+                         v
+                   Backend Deployment
+                         |
+                         +--> RDS PostgreSQL
 
+EKS nodes in private subnets -- outbound internet --> NAT Gateway --> Internet Gateway
 ```
 
-```text
+### AWS resources
 
-PostgreSQL
-  |
-  v
-PVC
-  |
-  v
-Persistent Storage
+- An EKS control plane running the Kubernetes version configured in `eks-terraform/variables.tf`.
+- An on-demand managed node group using `t3.small` instances across the configured private subnets. Its current min, desired, and max sizes are defined in `eks-terraform/main.tf`.
+- A NAT Gateway and Elastic IP for node egress. The existing VPC, subnets, route tables, and Internet Gateway are inputs and are not created by this stack.
+- EKS add-ons for VPC CNI, CoreDNS, kube-proxy, Pod Identity, EBS CSI, metrics, and node monitoring.
+- RDS PostgreSQL and ElastiCache Redis in private subnets. Both are single-AZ demo configurations. PostgreSQL uses encrypted `gp3` storage; Redis uses authentication and in-transit and at-rest encryption.
+- AWS Secrets Manager entries containing generated database credentials and connection endpoints. External Secrets Operator reads them using EKS Pod Identity and creates Kubernetes Secrets for the workloads.
+- An internet-facing ALB managed by AWS Load Balancer Controller from the Gateway API resources. The demo ACM certificate is self-signed; browsers will warn, and its sample DNS name does not match the ALB hostname.
+- EKS-managed Argo CD, AWS Load Balancer Controller, External Secrets Operator, and the `aws-alb` GatewayClass.
 
+RDS and ElastiCache add ongoing AWS charges. The managed database resources and credentials are also recorded in Terraform state; store state encrypted and restrict access. This setup creates new managed databases: it does not migrate data from the former in-cluster PostgreSQL or Redis StatefulSets.
+
+## Application flow
+
+- The browser connects to the ALB over HTTPS on port 443. The Gateway and HTTPRoute send requests to the frontend Service.
+- The frontend serves the UI, calls the backend Service, and uses Redis for session/preferences data. Its Redis connection uses TLS.
+- The backend connects to RDS PostgreSQL for persistent application data.
+- Network security groups allow PostgreSQL port 5432 and Redis port 6379 from the EKS cluster security group. The data services are not publicly accessible.
+- Argo CD watches the `aws-eks` branch. The ApplicationSet creates applications from component directories under `argo/`, excluding the bootstrap manifests and the old `argo/postgres/` and `argo/redis/` workloads.
+
+## Requirements
+
+- Terraform 1.5 or later, AWS CLI, `kubectl`, Docker with Buildx, and AWS credentials with permissions for the resources in this stack.
+- The existing VPC, private EKS subnets in at least two Availability Zones, public ALB subnets, Internet Gateway, EKS cluster role, and the IAM roles/Identity Center settings configured by the Terraform variables.
+- Access to the GitHub Container Registry packages `ghcr.io/hasan92mari/clusterscope-frontend` and `ghcr.io/hasan92mari/clusterscope-backend`.
+
+Review `eks-terraform/variables.tf` and any local `terraform.tfvars` before provisioning. The defaults are specific to the current AWS environment; update them for another account or VPC. Restrict `public_access_cidrs` to trusted addresses for a real environment.
+
+## Provision AWS and EKS
+
+Run from the repository root:
+
+```sh
+aws sts get-caller-identity
+terraform -chdir=eks-terraform init
+terraform -chdir=eks-terraform plan
 ```
 
-This demonstrates an important Kubernetes concept:
+Review the complete plan before applying. It must use the correct state for the existing EKS environment. If Terraform proposes creating an EKS cluster, NAT Gateway, or other infrastructure that already exists, stop and select or reconcile the intended state before continuing; do not apply a plan that would duplicate resources.
 
-> Application Pods can be replaced independently from the persistent data they use.
+After the plan is understood and approved:
 
----
-
-## Persistent Storage
-
-The stateful services use Kubernetes PersistentVolumes and PersistentVolumeClaims.
-
-The general architecture is:
-
-```text
-
-+----------------+
-| StatefulSet    |
-+----------------+
-        |
-        v
-+----------------+
-| PVC            |
-+----------------+
-        |
-        v
-+----------------+
-| PV             |
-+----------------+
-        |
-        v
-+----------------+
-| Persistent     |
-| Storage        |
-+----------------+
-
+```sh
+terraform -chdir=eks-terraform apply
+terraform -chdir=eks-terraform output -raw update_kubeconfig_command
 ```
 
-This allows the data lifecycle to be separated from the Pod lifecycle.
-For example, if a PostgreSQL Pod is deleted and recreated, the new Pod can mount the existing PVC and continue using the previously stored data.
-The current project uses `ReadWriteOnce` storage for the local stateful workloads.
+Run the printed kubeconfig command, then check the cluster:
 
-> The current storage implementation is intentionally designed for local development and training. Production environments should use a suitable distributed storage solution and production-grade StorageClasses.
-
----
-
-## Scalability
-
-The stateless application components can be horizontally scaled by increasing their replica counts.
-Example:
-
-```yaml
-
-frontend:
-  replicas: 3
-
-backend:
-  replicas: 3
-
+```sh
+kubectl get nodes -L topology.kubernetes.io/zone
 ```
 
-This allows multiple Frontend and Backend Pods to run simultaneously.
-Kubernetes Services provide a stable endpoint in front of these replicas and distribute traffic between available Pods.
+The root stack also bootstraps the shared Gateway API/controller CRDs required by the add-ons stack.
 
----
+## Install cluster add-ons
 
-## Self-Healing and Recovery
+The second Terraform root manages Helm and Kubernetes resources that need an active cluster and installed CRDs:
 
-One of the key Kubernetes concepts demonstrated by ClusterScope is **self-healing**.
-Kubernetes continuously monitors the desired state of the application.
-If a Pod crashes or becomes unavailable, Kubernetes can recreate it automatically.
-Health probes are used to help Kubernetes understand the state of the workloads:
-
-### Liveness Probe
-
-Determines whether the application is still functioning.
-If the application fails the liveness check repeatedly, Kubernetes can restart the container.
-
-### Readiness Probe
-
-Determines whether the application is ready to receive traffic.
-A Pod that is not ready is temporarily removed from Service traffic until it becomes healthy again.
-
----
-
-## Security
-
-Security is treated as an integral part of the Kubernetes architecture.
-The project applies several security and management practices, including:
-- Running containers as non-root users where possible
-- Dropping unnecessary Linux capabilities
-- Disabling privilege escalation
-- Using `seccomp` with `RuntimeDefault`
-- Using dedicated ServiceAccounts
-- Applying least-privilege RBAC
-- Storing credentials in Kubernetes Secrets
-- Using resource requests and limits
-- Using liveness and readiness probes
-- Separating workloads using namespaces
-- Using HTTPS/TLS for external traffic
-
-The goal is to demonstrate that security controls should be integrated into the application and infrastructure design rather than added afterwards.
-
----
-
-## Kubernetes Networking
-
-ClusterScope uses Kubernetes Services for internal communication.
-Pods are not accessed directly using their individual IP addresses.
-Instead, applications communicate through stable Kubernetes Service DNS names.
-
-```text
-
-Frontend
-    |
-    v
-Backend Service
-    |
-    v
-Backend Pods
-    |
-    v
-PostgreSQL Service
-    |
-    v
-PostgreSQL Pod
-
+```sh
+terraform -chdir=eks-terraform/addons init
+terraform -chdir=eks-terraform/addons plan
+terraform -chdir=eks-terraform/addons apply
 ```
 
-Redis is accessed independently by the Frontend:
+Review this plan too. It installs the AWS Load Balancer Controller, External Secrets Operator, and the `aws-alb` GatewayClass. Keep `aws_region`, `cluster_name`, `vpc_id`, and `aws_cli_path` consistent with the root configuration; set a local `eks-terraform/addons/terraform.tfvars` if the AWS CLI executable path differs.
 
-```text
+## Build and publish application images
 
-Frontend
-    |
-    v
-Redis Service
-    |
-    v
-Redis Pod
+The Argo Deployments use the `eks` tag. Build for the x86-64 architecture used by the configured `t3` nodes, then push both images to GHCR:
 
+```sh
+docker login ghcr.io -u hasan92mari
+
+docker buildx build --platform linux/amd64 \
+  --tag ghcr.io/hasan92mari/clusterscope-frontend:eks \
+  --push ./frontend
+
+docker buildx build --platform linux/amd64 \
+  --tag ghcr.io/hasan92mari/clusterscope-backend:eks \
+  --push ./backend
 ```
 
-This demonstrates Kubernetes service discovery and the abstraction provided by Services.
+When `docker login` prompts for a password, use a GitHub token with package write permission. Make sure the packages are readable by EKS; configure an image pull Secret if they are private.
 
----
+## Deploy with Argo CD
 
-## Gateway API and HTTPS
+Push the desired Argo manifest changes to the `aws-eks` branch. Argo CD automatically reconciles the application directories. For a manual refresh/sync, use the Argo CD UI or CLI for the frontend and backend applications.
 
-External traffic enters the cluster through the Kubernetes Gateway API.
-The request flow is:
+The backend and frontend ExternalSecrets obtain their connection details from Secrets Manager. Check the resulting resources without printing secret values:
 
-```text
-
-Browser
-   |
-   | HTTPS :443
-   v
-LoadBalancer
-   |
-   v
-Envoy Gateway
-   |
-   v
-Gateway
-   |
-   v
-HTTPRoute
-   |
-   v
-Frontend Service
-   |
-   v
-Frontend Pod
-
+```sh
+kubectl get externalsecret,secretstore -n clusterscope-backend
+kubectl get secret clusterscope-postgres -n clusterscope-backend -o json | jq -r '.data | keys[]'
+kubectl get externalsecret -n clusterscope-frontend
+kubectl get secret clusterscope-frontend-redis -n clusterscope-frontend -o json | jq -r '.data | keys[]'
 ```
 
-TLS is terminated at the Gateway, and the HTTPRoute forwards traffic to the Frontend Service. For the EKS ALB path, the certificate is self-signed and clients will display a warning.
-This provides practical experience with:
-- Gateway API
-- Gateway resources
-- HTTPRoute
-- TLS termination
-- HTTPS
-- LoadBalancer Services
-- Kubernetes traffic routing
+After syncing a new image, wait for rollout:
 
----
-
-## Namespace Isolation
-
-ClusterScope supports two deployment models.
-
-### Single Namespace
-
-All components can be deployed into one namespace:
-
-```text
-
-clusterscope
-├── Frontend
-├── Backend
-├── Redis
-├── PostgreSQL
-└── Gateway
-
+```sh
+kubectl rollout status deployment/clusterscope-frontend -n clusterscope-frontend
+kubectl rollout status deployment/clusterscope-backend -n clusterscope-backend
 ```
 
-### Multi Namespace
+## Access and troubleshooting
 
-The components can also be separated into individual namespaces:
+Get the public address and test the HTTPS listener. `-k` bypasses certificate trust validation for this self-signed demo only:
 
-```text
-
-clusterscope-frontend
-clusterscope-backend
-clusterscope-redis
-clusterscope-postgres
-clusterscope-gateway
-
+```sh
+kubectl get gateway clusterscope-gateway -n clusterscope-frontend
+curl -kI https://<gateway-address>
 ```
 
-The multi-namespace setup provides an additional training environment for learning:
-- Namespace isolation
-- Cross-namespace Service discovery
-- Cross-namespace Gateway routing
-- Resource organization
-- Kubernetes security boundaries
+Useful checks:
 
----
-
-## Helm
-
-The complete Kubernetes deployment is packaged as a **Helm chart**.
-Helm makes the application deployment reproducible and configurable without maintaining separate Kubernetes manifests for every environment.
-The chart provides configurable values for:
-- Namespaces
-- Container images
-- Image versions
-- Replica counts
-- Resource requests and limits
-- Storage sizes
-- Services
-- Database configuration
-- Redis configuration
-- Gateway configuration
-- TLS configuration
-
-For example:
-
-```yaml
-
-frontend:
-  replicas: 2
-
-backend:
-  replicas: 2
-
+```sh
+kubectl get pods -A
+kubectl get gateway,httproute -A
+kubectl describe externalsecret clusterscope-postgres -n clusterscope-backend
+kubectl logs deployment/clusterscope-backend -n clusterscope-backend
+kubectl logs deployment/clusterscope-frontend -n clusterscope-frontend
 ```
 
-The same chart can therefore be used with different configurations for development, testing, or other environments.
+The Gateway listener is HTTPS on port 443; use `https://` in the browser or `curl`. An ALB address with no scheme or with `http://` attempts port 80, which this Gateway does not configure.
 
-## Argo CD and GitOps
+## Teardown
 
-The `argo/appset+project.yaml` manifest defines an `AppProject` and an `ApplicationSet`. Its Matrix generator combines the component directories with the selected environment branches, creating separately managed Argo CD Applications.
+Back up any RDS data that must be retained. Deleting the Terraform-managed database or its state can permanently remove data; the demo configuration skips a final RDS snapshot. Remove/prune the Argo applications while their controllers are available, then review and run:
 
-Use this deployment path when Argo CD should reconcile the repository continuously. It is an alternative to Helm-based release management for the same workloads.
-
----
-
-## Infrastructure and Application Separation
-
-The project separates **application-level resources** from **cluster-level infrastructure**.
-The Helm chart manages application resources such as:
-
-```text
-
-Frontend
-Backend
-Redis
-PostgreSQL
-Services
-ConfigMaps
-Secrets
-RBAC
-Persistent Storage
-Gateway
-HTTPRoute
-
+```sh
+terraform -chdir=eks-terraform/addons destroy
+terraform -chdir=eks-terraform destroy
 ```
 
-Cluster-level infrastructure such as the following is managed independently:
-
-```text
-
-Kubernetes
-Gateway API CRDs
-Envoy Gateway
-GatewayClass
-MetalLB
-LoadBalancer infrastructure
-Certificate infrastructure
-
-```
-
-This separation keeps the application deployment independent from the underlying Kubernetes platform.
-
----
-
-## Production-Inspired Design
-
-Although ClusterScope is primarily a training project, its architecture follows several production-inspired principles.
-
-### Separation of Concerns
-
-Application, cache/session, database, networking, and infrastructure responsibilities are separated.
-
-### Stateless Application Workloads
-
-Frontend and Backend Pods can be replicated and replaced independently.
-
-### Stateful Data Services
-
-Redis and PostgreSQL are separated from the application workloads and use persistent storage.
-
-### Declarative Infrastructure
-
-Kubernetes resources are defined declaratively and managed through Helm.
-
-### Security
-
-Workloads use Kubernetes security controls such as RBAC, non-root execution, restricted capabilities, and TLS.
-
-### Scalability
-
-Stateless workloads can be scaled horizontally using Kubernetes replicas.
-
-### Recovery
-
-Kubernetes can automatically restart and recreate failed application Pods.
-
-### Persistence
-
-Stateful workloads use persistent volumes so that data can survive Pod recreation.
-
----
-
-## Training Scenarios
-
-ClusterScope can be used to practice realistic Kubernetes scenarios.
-Examples include:
-
-### Scaling
-
-Increase the Frontend or Backend replica count and observe how Kubernetes creates additional Pods.
-
-### Failure Recovery
-
-Delete a running Pod and observe Kubernetes automatically recreate it.
-
-```bash
-kubectl delete pod <pod-name>
-```
-
-### Configuration Changes
-
-Modify ConfigMaps or Secrets and observe how application configuration is managed.
-
-### Networking
-
-Inspect Services and DNS names and test communication between namespaces.
-
-### Storage
-
-Delete and recreate a stateful Pod and verify that persistent data remains available.
-
-### Troubleshooting
-
-Intentionally introduce configuration or deployment problems and investigate:
-
-```bash
-kubectl get pods
-
-kubectl describe pod <pod-name>
-
-kubectl logs <pod-name>
-
-kubectl get events
-```
-
-### Helm
-
-Modify values and upgrade the application:
-
-```bash
-helm upgrade clusterscope clusterscope/clusterscope
-```
-
-These scenarios turn the project into a practical Kubernetes playground rather than simply a static demonstration.
-
----
-
-## Production Limitations
-
-ClusterScope is **not intended to be a production-ready platform**.
-Some components are intentionally simplified to keep the project suitable for local development and Kubernetes training.
-A production deployment would require additional considerations, including:
-- Highly available PostgreSQL
-- Highly available Redis
-- Distributed persistent storage
-- Automated database backups
-- Disaster recovery
-- Production-grade secret management
-- Monitoring and observability
-- Centralized logging
-- Production TLS certificate management
-- Multi-node failure testing
-- Backup and restore procedures
-- Proper database replication
-
-The Helm chart defaults to `local-path`, which is intended for local development and learning rather than production use. The raw Argo CD manifests use the EKS `gp2` StorageClass. Production deployments should use storage appropriate to their availability and durability requirements.
-
-The raw manifests in `argo/` include Kubernetes NetworkPolicies and HorizontalPodAutoscalers for the application workloads. EKS applies these policies through the Amazon VPC CNI network policy feature, which is enabled by `eks-terraform`. The frontend and backend retain broad outbound access to preserve the former Cilium `world` and `kube-apiserver` egress rules; Redis and PostgreSQL allow DNS egress and accept application traffic only from their respective callers. The Helm chart does not currently template these resources, so Helm deployments should add equivalent policy and autoscaling configuration.
-
----
-
-## Project Goal
-
-The primary goal of ClusterScope is to provide a **realistic Kubernetes learning platform and practical training environment**.
-
-It combines multiple Kubernetes concepts into a single application:
-
-```text
-
-                     ClusterScope
-                          |
-        +-----------------+-----------------+
-        |                 |                 |
-        v                 v                 v
-    Frontend           Backend           Gateway
-        |                 |
-        |                 v
-        |            PostgreSQL
-        |
-        v
-      Redis
-        |
-        v
-Persistent Storage
-
-```
-
-Learners can use the project to understand how:
-- Stateless applications are deployed and scaled.
-- Stateful services are managed.
-- Persistent storage works.
-- Kubernetes Services provide networking and discovery.
-- Kubernetes automatically recovers failed workloads.
-- Security controls are applied to workloads.
-- Namespaces provide isolation.
-- Gateway API manages external traffic.
-- Helm packages and manages Kubernetes applications.
-The project is ultimately designed as a **hands-on Kubernetes playground** where learners can deploy, inspect, modify, scale, troubleshoot, break, recover, and experiment with a complete cloud-native application.
+The existing VPC and subnets are not destroyed by Terraform. Review the plans carefully; do not destroy shared resources that are used by other workloads.

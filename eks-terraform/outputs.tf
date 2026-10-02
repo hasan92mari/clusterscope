@@ -16,7 +16,7 @@ output "argocd_server_url" {
 
 output "update_kubeconfig_command" {
   description = "Run this command to add the EKS cluster credentials to your local kubeconfig."
-  value       = "${var.aws_cli_path} eks update-kubeconfig --region ${var.aws_region} --name ${aws_eks_cluster.this.name}"
+  value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${aws_eks_cluster.this.name}"
 }
 
 output "aws_load_balancer_controller_role_arn" {
