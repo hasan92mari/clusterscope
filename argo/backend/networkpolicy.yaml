@@ -18,14 +18,6 @@ spec:
             - protocol: TCP
               port: "8000"
   egress:
-    - toEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": clusterscope-postgres
-            "k8s:app": clusterscope-postgres
-      toPorts:
-        - ports:
-            - protocol: TCP
-              port: "5432"
     - toEntities:
         - kube-apiserver
     - toEntities:

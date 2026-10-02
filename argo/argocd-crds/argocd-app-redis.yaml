@@ -9,7 +9,7 @@ spec:
   project: clusterscope-project
   source:
     repoURL: https://github.com/hasan92mari/clusterscope.git
-    targetRevision: feat/add-argocd-crds
+    targetRevision: azure-aks
     path: argo/redis
   destination:
     server: https://kubernetes.default.svc

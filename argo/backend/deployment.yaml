@@ -62,14 +62,14 @@ spec:
                   key: database
             - name: POSTGRES_HOST
               valueFrom:
-                configMapKeyRef:
-                  name: clusterscope-backend-config
-                  key: postgres-host
+                secretKeyRef:
+                  name: clusterscope-postgres
+                  key: host
             - name: POSTGRES_PORT
               valueFrom:
-                configMapKeyRef:
-                  name: clusterscope-backend-config
-                  key: postgres-port
+                secretKeyRef:
+                  name: clusterscope-postgres
+                  key: port
           livenessProbe:
             httpGet:
               path: /healthz
@@ -101,3 +101,14 @@ spec:
                 - ALL
             seccompProfile:
               type: RuntimeDefault
+          volumeMounts:
+            - name: postgres-secrets
+              mountPath: /mnt/secrets-store
+              readOnly: true
+      volumes:
+        - name: postgres-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: clusterscope-postgres

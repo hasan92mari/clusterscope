@@ -1,16 +1,23 @@
-resource "azurerm_resource_group" "aks" {
-  name     = "aks"
-  location = "eastus2"
+locals {
+  location = "northcentralus"
 }
 
-resource "azapi_resource" "res-0" {
+resource "azurerm_resource_group" "aks" {
+  name     = "aks"
+  location = local.location
+}
+
+resource "azapi_resource" "cluster1-aks" {
   body = {
     kind = "Base"
     properties = {
       addonProfiles = {
         azureKeyvaultSecretsProvider = {
-          config  = null
-          enabled = false
+          config = {
+            enableSecretRotation = "true"
+            rotationPollInterval = "2m"
+          }
+          enabled = true
         }
         azurepolicy = {
           config  = null
@@ -18,7 +25,6 @@ resource "azapi_resource" "res-0" {
         }
       }
       agentPoolProfiles = [{
-        availabilityZones   = ["2", "3"]
         count               = 2
         enableAutoScaling   = true
         enableFIPS          = false
@@ -29,7 +35,7 @@ resource "azapi_resource" "res-0" {
         minCount            = 2
         mode                = "System"
         name                = "agentpool"
-        orchestratorVersion = "1.35.8"
+        orchestratorVersion = "1.35.7"
         osDiskSizeGB        = 128
         osDiskType          = "Managed"
         osSKU               = "Ubuntu"
@@ -97,7 +103,7 @@ resource "azapi_resource" "res-0" {
           installation = "Standard"
         }
       }
-      kubernetesVersion = "1.35.8"
+      kubernetesVersion = "1.35.7"
       metricsProfile = {
         costAnalysis = {
           enabled = false
@@ -141,7 +147,7 @@ resource "azapi_resource" "res-0" {
       nodeProvisioningProfile = {
         mode = "Manual"
       }
-      nodeResourceGroup = "MC_aks_cluster1-aks_eastus"
+      nodeResourceGroup = "MC_aks_cluster1-aks_northcentralus"
       oidcIssuerProfile = {
         enabled = true
       }
@@ -176,7 +182,7 @@ resource "azapi_resource" "res-0" {
       tier = "Free"
     }
   }
-  location  = "eastus2"
+  location  = local.location
   name      = "cluster1-aks"
   parent_id = azurerm_resource_group.aks.id
   type      = "Microsoft.ContainerService/managedclusters@2025-10-02-preview"
@@ -189,12 +195,12 @@ resource "azapi_resource" "res-0" {
 module "argocd_extension" {
   source = "./argocd-extension"
 
-  cluster_id = azapi_resource.res-0.id
+  cluster_id = azapi_resource.cluster1-aks.id
 }
 
 output "aks_get_credentials_command" {
   description = "Run this command to merge AKS credentials into your kubeconfig."
-  value       = "az aks get-credentials --resource-group ${azurerm_resource_group.aks.name} --name ${azapi_resource.res-0.name} --overwrite-existing"
+  value       = "az aks get-credentials --resource-group ${azurerm_resource_group.aks.name} --name ${azapi_resource.cluster1-aks.name} --overwrite-existing"
 }
 
 output "argocd_admin_password_command" {

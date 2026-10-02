@@ -5,4 +5,4 @@ metadata:
   namespace: clusterscope-frontend
 spec:
   associations:
-    - /subscriptions/4a63a39d-cb27-48c4-88f2-0c33a4b9dfdb/resourceGroups/MC_aks_cluster1-aks_eastus/providers/Microsoft.Network/virtualNetworks/aks-vnet-17547948/subnets/aks-appgateway
+    - /subscriptions/4a63a39d-cb27-48c4-88f2-0c33a4b9dfdb/resourceGroups/MC_aks_cluster1-aks_northcentralus/providers/Microsoft.Network/virtualNetworks/aks-vnet-17547948/subnets/aks-appgateway #REPLACE_WITH_NORTHCENTRALUS_APP_GATEWAY_SUBNET_RESOURCE_ID

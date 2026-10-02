@@ -44,6 +44,8 @@ spec:
       kind: HTTPRoute
     - group: "alb.networking.azure.io"
       kind: ApplicationLoadBalancer
+    - group: secrets-store.csi.x-k8s.io
+      kind: SecretProviderClass
   clusterResourceBlacklist:
     - group: rbac.authorization.k8s.io
       kind: ClusterRole
@@ -81,6 +83,8 @@ spec:
               revision: HEAD
               directories:
                 - path: argo/*
+                - path: argo/postgres
+                  exclude: true
                 - path: argo/argocd-crds
                   exclude: true
           - list:
