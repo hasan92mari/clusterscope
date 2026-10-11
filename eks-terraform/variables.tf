@@ -2,6 +2,11 @@ variable "aws_region" {
   description = "AWS region for the EKS cluster."
   type        = string
   default     = "eu-north-1"
+
+  validation {
+    condition     = var.aws_region == "eu-north-1"
+    error_message = "This Terraform configuration is pinned to eu-north-1 so the cluster and its managed resources stay in the same region."
+  }
 }
 
 variable "cluster_name" {

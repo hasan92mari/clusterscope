@@ -2,6 +2,11 @@ variable "aws_region" {
   description = "AWS region containing the existing EKS cluster."
   type        = string
   default     = "eu-north-1"
+
+  validation {
+    condition     = var.aws_region == "eu-north-1"
+    error_message = "The add-ons must use eu-north-1, the region of the EKS cluster."
+  }
 }
 
 variable "cluster_name" {
